@@ -1,5 +1,5 @@
 let _PTR = 1;
-let _MAX_PTR = 10000;
+let _MAX_PTR = Number.MAX_SAFE_INTEGER;
 
 function nextPtr() {
   const ret = _PTR++;
@@ -32,9 +32,8 @@ export class Table<T> {
   }
 }
 
-type QColMap<T> = {
-  [Property in keyof T]: QCol<T[Property]>;
-}
+type QColMap<T> = { [Property in keyof T]: QCol<T[Property]> }
+type QExpressionMap<T> = { [Property in keyof T]: ExpressionArgTyped<T[Property]> }
 
 type QTableMap<T> = { _base_: T; _alias_: string; _name_: string; } & QColMap<T>;
 
@@ -82,19 +81,12 @@ class QCol<TValue> {
   }
 }
 
-class QSelectable<T> {
+class QJoinable<T> {
 
   constructor(
-    private table: QTable<T>,
-    private _q_: QueryBuilder
+    protected table: QTable<T>,
+    protected _q_: QueryBuilder
   ) { }
-
-  select<U extends Record<string, QCol<unknown>>>(fn: (tables: QColMap<T>) => U) {
-
-    const model: Record<string, QColMap<T>> = { foo: this.table._cols_ };
-    const _fn = (tables: Record<string, QColMap<unknown>>) => fn(model.foo);
-    return _selectBase(model, this._q_, _fn);
-  }
 
   innerJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(
     table: Table<J>,
@@ -148,21 +140,77 @@ class QSelectable<T> {
     return _joinBase(model, this._q_, table, _t1On, t2On, _map, 'CROSS');
   }
 
+}
+
+class QSelectable<T> extends QJoinable<T> {
+
+  constructor(
+    table: QTable<T>,
+    _q_: QueryBuilder
+  ) {
+    super(table, _q_);
+  }
+
+  select<U extends Record<string, QCol<unknown>>>(fn: (tables: QColMap<T>) => U) {
+
+    const model: Record<string, QColMap<T>> = { foo: this.table._cols_! };
+    const _fn = (tables: Record<string, QColMap<unknown>>) => fn(model.foo);
+    return _selectBase(model, this._q_, _fn);
+  }
+
+
   toSql() {
     return this._q_.toSql();
   }
 }
 
-class QSelectableJoin<TModel extends Record<string, QColMap<unknown>>> {
+class QInsertable<T>{
 
   constructor(
-    private _model_: TModel,
+    private table: QTable<T>,
     private _q_: QueryBuilder
   ) { }
 
-  select<U extends Record<string, QCol<unknown>>>(fn: (model: TModel) => U): QTypeSelected<U, TModel> {
-    return _selectBase(this._model_, this._q_, fn);
+  values(...values: (QExpressionMap<T> | QSelected<QColMap<T>, Record<string, QColMap<unknown>>>)[]) {
+
+    if (values.length) {
+
+      for (const map of values) {
+
+        if (map instanceof QSelected) {
+
+          if (!this._q_.cols)
+            this._q_.cols = map['_selected_'];
+
+        }
+        else {
+          for (const key in map) {
+            if (!map[key].alias)
+              map[key].alias = key;
+          }
+
+          if (!this._q_.cols)
+            this._q_.cols = map;
+        }
+
+        this._q_.insertValues.push(map);
+      }
+
+    }
+
+    return new QInserted(this._q_);
   }
+
+  toSql() {
+    return this._q_.toSql();
+  }
+}
+
+class QJoinableJoin<TModel extends Record<string, QColMap<unknown>>>{
+  constructor(
+    protected _model_: TModel,
+    protected _q_: QueryBuilder
+  ) { }
 
   leftJoin<J, TKey, U extends Record<string, QColMap<unknown>>>
     (
@@ -203,6 +251,20 @@ class QSelectableJoin<TModel extends Record<string, QColMap<unknown>>> {
 
     return _joinBase(this._model_, this._q_, table, t1On, t2On, map, 'RIGHT');
   }
+}
+
+class QSelectableJoin<TModel extends Record<string, QColMap<unknown>>> extends QJoinableJoin<TModel> {
+
+  constructor(
+    _model_: TModel,
+    _q_: QueryBuilder
+  ) {
+    super(_model_, _q_);
+  }
+
+  select<U extends Record<string, QCol<unknown>>>(fn: (model: TModel) => U): QTypeSelected<U, TModel> {
+    return _selectBase(this._model_, this._q_, fn);
+  }
 
 }
 
@@ -228,7 +290,7 @@ function _joinBase<TModel extends Record<string, QColMap<unknown>>, J, TKey, U e
 function _selectBase<TModel extends Record<string, QColMap<unknown>>, U extends Record<string, QCol<unknown>>>(
   model: TModel,
   q: QueryBuilder,
-  fn: (model: TModel) => U): QTypeSelected<U, TModel> {
+  fn: (model: TModel) => U): QSelected<U, TModel> {
 
   const selected = fn(model);
 
@@ -236,9 +298,37 @@ function _selectBase<TModel extends Record<string, QColMap<unknown>>, U extends 
     if (!selected[key].alias)
       selected[key].alias = key;
 
-  q.select = selected;
+  q.cols = selected;
 
   return new QSelected(selected, q, model);
+}
+
+function _insertBase<TModel extends Record<string, QColMap<unknown>>, U extends Record<string, QCol<unknown>>>(
+  model: TModel,
+  q: QueryBuilder,
+  fn: (model: TModel) => U[]) {
+
+  const maps = fn(model);
+
+
+  if (maps.length) {
+
+    for (const map of maps) {
+      for (const key in map)
+        if (!map[key].alias)
+          map[key].alias = key;
+
+      q.insertValues.push(map);
+    }
+
+    const cols = maps[0];
+
+    q.cols = cols;
+
+  }
+
+  return new QInserted(q);
+
 }
 
 type QTypeSelected<T, U> = QSelected<T, U>;
@@ -315,6 +405,15 @@ class QSelected<ColMap extends QColMap<unknown>, TSource> {
     const path = `(${this.toSql()})`;
     return new QCol(alias, path).asAlias();
   }
+
+}
+
+class QInserted {
+  constructor(private _q_: QueryBuilder) { }
+
+  toSql() {
+    return this._q_.toSql();
+  }
 }
 
 class QueryBuilder {
@@ -327,15 +426,21 @@ class QueryBuilder {
   offset = 0;
   orderBys: Operation[] = [];
 
+  insertValues: (Record<string, QCol<unknown>> | QSelected<QColMap<unknown>, unknown>)[] = [];
+
   constructor(
     public from: QTable<any>,
-    public select: QColMap<any>,
+    public type: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE',
+    public cols?: QColMap<any>,
   ) { }
 
   toSql() {
+    if (!this.cols)
+      throw new Error('No columns set');
+
     let q = '';
 
-    const bindings = [...this.whereClauses, ...this.joins, ...this.havingClauses, ...Object.values(this.select)]
+    const bindings = [...this.whereClauses, ...this.joins, ...this.havingClauses, ...Object.values(this.cols)]
       .filter(x => !!x.bindings)
       .map(x => x.bindings!);
 
@@ -345,17 +450,41 @@ class QueryBuilder {
           q += `SET @${key} = ${escape(binding[key])};\r\n`;
     }
 
+    switch (this.type) {
+      case 'SELECT': {
+        q += `SELECT ${Object.entries(this.cols).map(pair => {
 
-    q += `SELECT ${Object.entries(this.select).map(pair => {
+          let str = `${pair[1].path}`;
 
-      let str = `${pair[1].path}`;
+          if (pair[1].alias)
+            str += ` AS ${pair[1].alias}`;
 
-      if (pair[1].alias)
-        str += ` AS ${pair[1].alias}`;
+          return str;
 
-      return str;
+        }).join(', ')}\r\nFROM ${this.from._name_} ${this.from._alias_}`;
+        break;
+      }
 
-    }).join(', ')}\r\nFROM ${this.from._name_} ${this.from._alias_}`;
+      case 'INSERT': {
+        const keys = Object.keys(this.cols);
+        const values = this.insertValues.map(o => {
+
+          const orderedVals: QCol<unknown>[] = [];
+
+          if (o instanceof QSelected) {
+            orderedVals.push(o.asCol());
+          } else {
+            for (const key of keys)
+              orderedVals.push(o[key]);
+          }
+
+          return `(${orderedVals.map(col => col.alias || col.path).join(', ')})`;
+
+        });
+        q += `INSERT INTO ${this.from._name_} ${this.from._alias_}\r\n(${keys.map(key => `${this.from._alias_}.${key}`).join(', ')})\r\nVALUES\r\n${values.join(',\r\n')}`;
+      }
+    }
+
 
     if (this.joins.length)
       q += `\r\n${this.joins.map(op => op.str).join('\n')}`;
@@ -397,6 +526,7 @@ class Operation {
 }
 
 type ExpressionArg = QCol<unknown> | Operation | number | string;
+type ExpressionArgTyped<T> = QCol<T> | Operation | T;
 
 function _paramaterize(arg: QCol<unknown> | Operation | number | string) {
   let param = '';
@@ -417,10 +547,16 @@ function _paramaterize(arg: QCol<unknown> | Operation | number | string) {
   return { param, binding };
 }
 
-function from<T>(table: Table<T>): QSelectable<T> {
+export function from<T>(table: Table<T>): QSelectable<T> {
   const qTable = new QTable(table._base, table.name, `T${nextPtr()}`);
 
-  return new QSelectable<T>(qTable, new QueryBuilder(qTable, qTable._cols_!));
+  return new QSelectable<T>(qTable, new QueryBuilder(qTable, 'SELECT', qTable._cols_!));
+}
+
+export function insertInto<T>(table: Table<T>) {
+  const qTable = new QTable(table._base, table.name, `T${nextPtr()}`);
+
+  return new QInsertable<T>(qTable, new QueryBuilder(qTable, 'INSERT'));
 }
 
 function _symbolOperation(col: ExpressionArg, value: ExpressionArg, symbol: '<' | '>' | '=' | '<>' | '<=' | '>=') {

@@ -1,0 +1,27 @@
+{
+  "name": "mysql-query-builder",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "tsc && node test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reed-lawrence/mysql-query-builder.git"
+  },
+  "keywords": [
+    "mysql",
+    "query",
+    "builer"
+  ],
+  "author": "Reed Lawrence",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/reed-lawrence/mysql-query-builder/issues"
+  },
+  "homepage": "https://github.com/reed-lawrence/mysql-query-builder#readme",
+  "devDependencies": {
+    "mysql2": "^2.3.3"
+  }
+}
