@@ -1,12 +1,4 @@
-let _PTR = 1;
-let _MAX_PTR = Number.MAX_SAFE_INTEGER;
-
-function nextPtr() {
-  const ret = _PTR++;
-  if (_PTR > _MAX_PTR)
-    _PTR = 1;
-  return ret;
-}
+import { randomUUID } from 'node:crypto';
 
 type EscapeFn = (value: any) => string;
 
@@ -18,891 +10,452 @@ export function registerEscaper(fn: EscapeFn) {
   escape = fn;
 }
 
-export function registerMaxPtr(int: number) {
-  _MAX_PTR = int;
+export interface IHasUUID {
+  id: string;
 }
 
+export interface IHasAlias extends IHasUUID {
+  alias: string;
+}
+
+type ExpressionArg<T> = QCol<T> | T;
+
 export class Table<T> {
-  public _base: T;
+  public model: T;
   constructor(
     public name: string,
-    public base: new () => T
+    public ctor: new () => T
   ) {
-    this._base = new this.base();
+    this.model = new this.ctor();
   }
 }
 
-type QColMap<T> = { [Property in keyof T]: QCol<T[Property]> }
-type QExpressionMap<T> = { [Property in keyof T]: ExpressionArgTyped<T[Property]> }
+class QCol<T>{
+  public useAlias = false
 
-type QTableMap<T> = { _base_: T; _alias_: string; _name_: string; } & QColMap<T>;
+  public id = randomUUID();
+  public value?: QCol<T>;
+  public alias = '';
+
+  constructor(
+    public path: string,
+    public parent?: QTable<unknown>,
+    public defer?: (q: Query) => string
+  ) { }
+
+  get ref() {
+    return this.useAlias ? this.alias : this.path;
+  }
+
+  as(alias = '') {
+    this.useAlias = true;
+
+    if (alias)
+      this.alias = alias;
+
+    return this;
+  }
+
+}
+
+function operation<T>(fn: (q: Query) => string) {
+  return new QCol<T>('', undefined, fn);
+}
+
+function subquery<T>(value: IQueryable) {
+
+  return new QCol<T>('', undefined, (q) => {
+
+    const output = value.toSql({
+      ptr_var: q.ptr_var,
+      ptr_table: q.ptr_table
+    });
+
+    q.ptr_var = value.q.ptr_var;
+    q.ptr_table = value.q.ptr_table;
+
+    return output;
+
+  })
+}
+
+function toCol<T>(q: Query, obj: ExpressionArg<T>) {
+  if (obj instanceof QCol)
+    return obj;
+  else if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean')
+    return new QCol<T>(q.paramaterize(obj))
+  else
+    throw new Error(`Cannot convert ${JSON.stringify(obj)} to QCol`);
+}
+
+type QColMap<T> = { [Index in keyof T]: QCol<T[Index]> }
+type QExpressionMap<T> = { [Index in keyof T]: QCol<T[Index]> | T[Index] };
 
 class QTable<T> {
 
-  constructor(
-    public _base_: T,
-    public _name_: string,
-    public _alias_: string,
-    public _cols_?: QColMap<T>
-  ) {
-    if (!this._cols_)
-      this._cols_ = Object.fromEntries(Object.entries(_base_).map(pair => [pair[0], new QCol<unknown>('', `${_alias_}.${pair[0]}`)])) as any;
-
-    Object.entries(this._cols_!).forEach((pair) => (this as any)[pair[0]] = pair[1]);
-
-  }
-
-}
-
-class QCol<TValue> {
-  private _useAlias = false;
+  public readonly id = randomUUID();
+  public readonly cols: QColMap<T>;
 
   constructor(
-    private _alias: string,
+    public base: T,
     public path: string,
-    public bindings?: BindingMap
-  ) { }
-
-  get alias() {
-    return this._useAlias ? this._alias : '';
-  }
-
-  set alias(value: string) {
-    this._alias = value;
-  }
-
-  asAlias(alias = '') {
-    this._useAlias = true;
-
-    if (alias)
-      this._alias = alias;
-
-    return this;
-  }
-}
-
-class QJoinable<T> {
-
-  constructor(
-    protected table: QTable<T>,
-    protected _q_: QueryBuilder
-  ) { }
-
-  innerJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(
-    table: Table<J>,
-    t1On: (obj: QColMap<T>) => QCol<TKey>,
-    t2On: (obj: QColMap<J>) => QCol<TKey>,
-    map: (t1: QColMap<T>, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    const model: Record<string, QColMap<T>> = { foo: this.table._cols_! };
-    const _t1On = (_m: Record<string, QColMap<T>>) => t1On(model.foo);
-    const _map = (_t1: Record<string, QColMap<T>>, _t2: QColMap<J>) => map(model.foo, _t2)
-
-    return _joinBase(model, this._q_, table, _t1On, t2On, _map, 'INNER');
-  }
-
-  leftJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(
-    table: Table<J>,
-    t1On: (obj: QColMap<T>) => QCol<TKey>,
-    t2On: (obj: QColMap<J>) => QCol<TKey>,
-    map: (t1: QColMap<T>, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    const model: Record<string, QColMap<T>> = { foo: this.table._cols_! };
-    const _t1On = (_m: Record<string, QColMap<T>>) => t1On(model.foo);
-    const _map = (_t1: Record<string, QColMap<T>>, _t2: QColMap<J>) => map(model.foo, _t2)
-
-    return _joinBase(model, this._q_, table, _t1On, t2On, _map, 'LEFT');
-  }
-
-  rightJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(
-    table: Table<J>,
-    t1On: (obj: QColMap<T>) => QCol<TKey>,
-    t2On: (obj: QColMap<J>) => QCol<TKey>,
-    map: (t1: QColMap<T>, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    const model: Record<string, QColMap<T>> = { foo: this.table._cols_! };
-    const _t1On = (_m: Record<string, QColMap<T>>) => t1On(model.foo);
-    const _map = (_t1: Record<string, QColMap<T>>, _t2: QColMap<J>) => map(model.foo, _t2)
-
-    return _joinBase(model, this._q_, table, _t1On, t2On, _map, 'RIGHT');
-  }
-
-  crossJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(
-    table: Table<J>,
-    t1On: (obj: QColMap<T>) => QCol<TKey>,
-    t2On: (obj: QColMap<J>) => QCol<TKey>,
-    map: (t1: QColMap<T>, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    const model: Record<string, QColMap<T>> = { foo: this.table._cols_! };
-    const _t1On = (_m: Record<string, QColMap<T>>) => t1On(model.foo);
-    const _map = (_t1: Record<string, QColMap<T>>, _t2: QColMap<J>) => map(model.foo, _t2)
-
-    return _joinBase(model, this._q_, table, _t1On, t2On, _map, 'CROSS');
-  }
-
-}
-
-class QSelectable<T> extends QJoinable<T> {
-
-  constructor(
-    table: QTable<T>,
-    _q_: QueryBuilder
+    public alias: string = '',
+    cols?: QColMap<T>
   ) {
-    super(table, _q_);
-  }
 
-  select<U extends Record<string, QCol<unknown>>>(fn: (tables: QColMap<T>) => U) {
+    if (cols)
+      this.cols = cols;
+    else
+      this.cols = Object.fromEntries(Object.entries(base).map(pair => [pair[0], new QCol<unknown>(pair[0], this)])) as QColMap<T>;
 
-    const model: Record<string, QColMap<T>> = { foo: this.table._cols_! };
-    const _fn = (tables: Record<string, QColMap<unknown>>) => fn(model.foo);
-    return _selectBase(model, this._q_, _fn);
-  }
-
-
-  toSql() {
-    return this._q_.toSql();
   }
 }
 
-class QInsertable<T>{
+type QType = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+
+export class Query {
+
+  ptr_var = 1;
+  ptr_table = 1;
+
+  aliases = new Map<string, string>();
+  col_store = new Map<string, { path: string; alias: string; }>();
+
+  scope: QTable<unknown>[] = [];
+  variables: string[] = [];
+  selected: Record<string, QCol<unknown>> = {};
+  wheres: QCol<unknown>[] = [];
+  joins: QCol<void>[] = [];
+
+  insert = {
+    cols: {} as QColMap<unknown>,
+    values: [] as QCol<unknown>[]
+  }
+
+  updates: [QCol<unknown>, QCol<unknown>][] = [];
+
+  deletes: QTable<unknown>[] = [];
 
   constructor(
-    private table: QTable<T>,
-    private _q_: QueryBuilder
-  ) { }
+    private from: QTable<unknown>,
+    private type: QType
+  ) {
+    this.scope = [from];
+  }
 
-  values(...values: (QExpressionMap<T> | QSelected<QColMap<T>, Record<string, QColMap<unknown>>>)[]) {
+  public tableAlias(table: QTable<unknown>) {
+    let alias = this.aliases.get(table.id);
 
-    if (values.length) {
+    if (!alias) {
+      alias = table.alias || `T${this.ptr_table++}`;
+      table.alias = alias;
+      this.aliases.set(table.id, table.alias);
+    }
 
-      for (const map of values) {
+    return table.alias;
+  }
 
-        if (map instanceof QSelected) {
+  public colRef(col: QCol<unknown>) {
 
-          if (!this._q_.cols)
-            this._q_.cols = map['_selected_'];
+    let stored = this.col_store.get(col.id);
+    if (!stored) {
+      let path = col.path;
 
+      if (col.defer)
+        path = col.defer(this);
+      else if (col.parent)
+        path = `${this.tableAlias(col.parent)}.${col.path}`;
+
+      stored = { path, alias: col.useAlias ? col.alias : '' };
+
+      this.col_store.set(col.id, stored);
+
+      return stored.path;
+
+    } else {
+      return stored.alias || stored.path;
+    }
+
+
+    // if (col.useAlias)
+    //   return col.alias;
+    // else if (col.parent)
+    //   return `${this.tableAlias(col.parent)}.${col.path}`;
+    // else
+    //   return col.path;
+  }
+
+  public paramaterize(value: string | number | boolean) {
+    const escaped = escape(value);
+    const binding = `@value_${this.ptr_var++}`;
+    const str = `${binding} = ${escaped};`;
+    this.variables.push(str);
+    return binding;
+  }
+
+  private selectStr({ from = this.from } = {}) {
+    let q = `SELECT ${(Object.values(this.selected) as QCol<unknown>[]).map((col) => {
+      let stored = this.col_store.get(col.id);
+
+      if (stored) {
+        return stored.alias || stored.path;
+      }
+      else {
+        let str = col.path;
+
+        if (col.defer) {
+          str = col.defer(this);
         }
         else {
-          for (const key in map) {
-            if (!map[key].alias)
-              map[key].alias = key;
-          }
-
-          if (!this._q_.cols)
-            this._q_.cols = map;
+          if (col.parent)
+            str = `${this.tableAlias(col.parent)}.${str}`;
         }
 
-        this._q_.insertValues.push(map);
+        this.col_store.set(col.id, { path: str, alias: col.useAlias ? col.alias : '' });
+
+        if (col.useAlias)
+          str += ` AS ${col.alias}`;
+
+        return str;
       }
 
+    }).join(', ')} FROM ${from.path} ${this.tableAlias(from)}`;
+    return q;
+  }
+
+  private insertStr({ from = this.from } = {}) {
+    let q = `INSERT INTO ${from.path} ${this.tableAlias(from)}`;
+    q += `\r\n(${Object.values(this.insert.cols).map(col => this.colRef(col as QCol<unknown>)).join(', ')})`;
+    q += `\r\nVALUES`;
+    q += `\r\n${this.insert.values.map(col => `(${col.defer?.call(col, this) || ''})`).join('\r\n')}`;
+    return q;
+  }
+
+  private updateStr({ from = this.from } = {}) {
+    let q = `UPDATE ${from.path} ${this.tableAlias(from)}`;
+    q += `\r\nSET ${this.updates.map(pair => `${this.colRef(pair[0])}=${this.colRef(pair[1])}`).join(', ')}`;
+    return q;
+  }
+
+  private deleteStr({ from = this.from } = {}) {
+    let q = `DELETE ${this.deletes.map(table => this.tableAlias(table)).join(', ')} FROM ${this.from.path} ${this.tableAlias(this.from)}`;
+    return q;
+  }
+
+  toSql(opts?: { ptr_var: number; ptr_table: number }) {
+
+    if (opts) {
+      this.ptr_var = opts.ptr_var;
+      this.ptr_table = opts.ptr_table
     }
-
-    return new QInserted(this._q_);
-  }
-
-  toSql() {
-    return this._q_.toSql();
-  }
-}
-
-class QJoinableJoin<TModel extends Record<string, QColMap<unknown>>>{
-  constructor(
-    protected _model_: TModel,
-    protected _q_: QueryBuilder
-  ) { }
-
-  leftJoin<J, TKey, U extends Record<string, QColMap<unknown>>>
-    (
-      table: Table<J>,
-      t1On: (obj: TModel) => QCol<TKey>,
-      t2On: (obj: QColMap<J>) => QCol<TKey>,
-      map: (t1: TModel, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    return _joinBase(this._model_, this._q_, table, t1On, t2On, map, 'LEFT');
-  }
-
-  innerJoin<J, TKey, U extends Record<string, QColMap<unknown>>>
-    (
-      table: Table<J>,
-      t1On: (obj: TModel) => QCol<TKey>,
-      t2On: (obj: QColMap<J>) => QCol<TKey>,
-      map: (t1: TModel, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    return _joinBase(this._model_, this._q_, table, t1On, t2On, map, 'INNER');
-  }
-
-  crossJoin<J, TKey, U extends Record<string, QColMap<unknown>>>
-    (
-      table: Table<J>,
-      t1On: (obj: TModel) => QCol<TKey>,
-      t2On: (obj: QColMap<J>) => QCol<TKey>,
-      map: (t1: TModel, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    return _joinBase(this._model_, this._q_, table, t1On, t2On, map, 'CROSS');
-  }
-
-  rightJoin<J, TKey, U extends Record<string, QColMap<unknown>>>
-    (
-      table: Table<J>,
-      t1On: (obj: TModel) => QCol<TKey>,
-      t2On: (obj: QColMap<J>) => QCol<TKey>,
-      map: (t1: TModel, t2: QColMap<J>) => U): QSelectableJoin<U> {
-
-    return _joinBase(this._model_, this._q_, table, t1On, t2On, map, 'RIGHT');
-  }
-}
-
-class QSelectableJoin<TModel extends Record<string, QColMap<unknown>>> extends QJoinableJoin<TModel> {
-
-  constructor(
-    _model_: TModel,
-    _q_: QueryBuilder
-  ) {
-    super(_model_, _q_);
-  }
-
-  select<U extends Record<string, QCol<unknown>>>(fn: (model: TModel) => U): QTypeSelected<U, TModel> {
-    return _selectBase(this._model_, this._q_, fn);
-  }
-
-}
-
-function _joinBase<TModel extends Record<string, QColMap<unknown>>, J, TKey, U extends Record<string, QColMap<unknown>>>
-  (
-    model: TModel,
-    q: QueryBuilder,
-    table: Table<J>,
-    t1On: (obj: TModel) => QCol<TKey>,
-    t2On: (obj: QColMap<J>) => QCol<TKey>,
-    map: (t1: TModel, t2: QColMap<J>) => U,
-    key: 'INNER' | 'LEFT' | 'RIGHT' | 'CROSS'): QSelectableJoin<U> {
-
-  const join = new QTable<J>(table._base, table.name, `T${nextPtr()}`);
-
-  q.joins.push(new Operation(`${key} JOIN ${join._name_} ${join._alias_} ON ${t1On(model).path} = ${t2On(join._cols_!).path}`));
-
-  const mapped = map(model, join._cols_!);
-
-  return new QSelectableJoin(mapped, q);
-}
-
-function _selectBase<TModel extends Record<string, QColMap<unknown>>, U extends Record<string, QCol<unknown>>>(
-  model: TModel,
-  q: QueryBuilder,
-  fn: (model: TModel) => U): QSelected<U, TModel> {
-
-  const selected = fn(model);
-
-  for (const key in selected)
-    if (!selected[key].alias)
-      selected[key].alias = key;
-
-  q.cols = selected;
-
-  return new QSelected(selected, q, model);
-}
-
-function _insertBase<TModel extends Record<string, QColMap<unknown>>, U extends Record<string, QCol<unknown>>>(
-  model: TModel,
-  q: QueryBuilder,
-  fn: (model: TModel) => U[]) {
-
-  const maps = fn(model);
-
-
-  if (maps.length) {
-
-    for (const map of maps) {
-      for (const key in map)
-        if (!map[key].alias)
-          map[key].alias = key;
-
-      q.insertValues.push(map);
-    }
-
-    const cols = maps[0];
-
-    q.cols = cols;
-
-  }
-
-  return new QInserted(q);
-
-}
-
-type QTypeSelected<T, U> = QSelected<T, U>;
-
-class QSelected<ColMap extends QColMap<unknown>, TSource> {
-  constructor(
-    private _selected_: ColMap,
-    private _q_: QueryBuilder,
-    private _model_: TSource
-  ) { }
-
-  where(fn: (obj: ColMap, source: TSource) => Operation) {
-    const op = fn(this._selected_, this._model_);
-    this._q_.whereClauses.push(op);
-    return this;
-  }
-
-  groupBy(fn: (obj: ColMap, source: TSource) => QCol<unknown>) {
-    const key = fn(this._selected_, this._model_);
-    const op = new Operation(`GROUP BY ${key.path}`);
-    this._q_.groupBy = op;
-    return this;
-  }
-
-  having(fn: (obj: ColMap, source: TSource) => Operation) {
-    const op = fn(this._selected_, this._model_);
-    this._q_.havingClauses.push(op);
-    return this;
-  }
-
-  limit(number: number) {
-    this._q_.limit = number;
-    return this;
-  }
-
-  offset(number: number) {
-    this._q_.offset = number;
-    return this;
-  }
-
-  orderBy<ArgType extends { on: QCol<unknown> | Operation, direction?: 'ASC' | 'DESC' }>(fn: (obj: ColMap, source: TSource) => ArgType[] | ArgType) {
-
-    const val = fn(this._selected_, this._model_);
-
-    const stmts: ArgType[] = (Array.isArray(val) ? val : [val]) || [];
-
-    let strings: string[] = [];
-    let bindings: { [index: string]: any } = {};
-
-    if (stmts.length)
-      for (const obj of stmts) {
-        const direction = obj.direction || 'ASC';
-
-        if (obj.on instanceof QCol) {
-          strings.push(`${obj.on.alias || obj.on.path} ${direction}`);
-        }
-        else if (obj.on instanceof Operation) {
-          strings.push(`${obj.on.str} ${direction}`);
-          if (obj.on.bindings)
-            bindings = { ...bindings, ...obj.on.bindings };
-        }
-      }
-
-    this._q_.orderBys.push(new Operation(strings.join(', '), Object.keys(bindings).length ? bindings : undefined));
-
-    return this;
-  }
-
-  toSql() {
-    return this._q_.toSql();
-  }
-
-  asCol(alias = '') {
-    const path = `(${this.toSql()})`;
-    return new QCol(alias, path).asAlias();
-  }
-
-}
-
-class QInserted {
-  constructor(private _q_: QueryBuilder) { }
-
-  toSql() {
-    return this._q_.toSql();
-  }
-}
-
-class QueryBuilder {
-
-  whereClauses: Operation[] = [];
-  havingClauses: Operation[] = [];
-  joins: Operation[] = [];
-  groupBy?: Operation;
-  limit = Infinity;
-  offset = 0;
-  orderBys: Operation[] = [];
-
-  insertValues: (Record<string, QCol<unknown>> | QSelected<QColMap<unknown>, unknown>)[] = [];
-
-  constructor(
-    public from: QTable<any>,
-    public type: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE',
-    public cols?: QColMap<any>,
-  ) { }
-
-  toSql() {
-    if (!this.cols)
-      throw new Error('No columns set');
 
     let q = '';
 
-    const bindings = [...this.whereClauses, ...this.joins, ...this.havingClauses, ...Object.values(this.cols)]
-      .filter(x => !!x.bindings)
-      .map(x => x.bindings!);
-
-    if (bindings.length) {
-      for (const binding of bindings)
-        for (const key in binding)
-          q += `SET @${key} = ${escape(binding[key])};\r\n`;
-    }
-
     switch (this.type) {
       case 'SELECT': {
-        q += `SELECT ${Object.entries(this.cols).map(pair => {
-
-          let str = `${pair[1].path}`;
-
-          if (pair[1].alias)
-            str += ` AS ${pair[1].alias}`;
-
-          return str;
-
-        }).join(', ')}\r\nFROM ${this.from._name_} ${this.from._alias_}`;
+        q = this.selectStr();
         break;
       }
-
       case 'INSERT': {
-        const keys = Object.keys(this.cols);
-        const values = this.insertValues.map(o => {
-
-          const orderedVals: QCol<unknown>[] = [];
-
-          if (o instanceof QSelected) {
-            orderedVals.push(o.asCol());
-          } else {
-            for (const key of keys)
-              orderedVals.push(o[key]);
-          }
-
-          return `(${orderedVals.map(col => col.alias || col.path).join(', ')})`;
-
-        });
-        q += `INSERT INTO ${this.from._name_} ${this.from._alias_}\r\n(${keys.map(key => `${this.from._alias_}.${key}`).join(', ')})\r\nVALUES\r\n${values.join(',\r\n')}`;
+        q = this.insertStr();
+        break;
       }
+      case 'UPDATE': {
+        q = this.updateStr();
+        break;
+      }
+      case 'DELETE': {
+        q = this.deleteStr();
+        break;
+      }
+      default:
+        throw new Error('Not implemented');
     }
 
+    if (this.joins?.length)
+      q += `\r\n${this.joins.map(join => `${join.defer!.call(join, this)}`)
+        .join('\r\n')}`;
 
-    if (this.joins.length)
-      q += `\r\n${this.joins.map(op => op.str).join('\n')}`;
+    if (this.wheres?.length)
+      q += `\r\nWHERE ${this.wheres.map(clause => `(${clause.defer!.call(clause, this)})`).join(' AND ')}`;
 
-    if (this.whereClauses.length)
-      q += `\r\nWHERE ${this.whereClauses.map(clause => `(${clause.str})`).join(' AND ')}`;
+    if (this.variables?.length)
+      q = this.variables.join('\r\n') + '\r\n' + q;
 
-    if (this.groupBy)
-      q += `\r\n${this.groupBy.str}`;
-
-    if (this.havingClauses.length)
-      q += `\r\nHAVING ${this.havingClauses.map(clause => `(${clause.str})`).join(' AND ')}`;
-
-    if (this.orderBys.length)
-      q += `\r\nORDER BY ${this.orderBys.map(x => x.str).join(', ')}`;
-
-    if (this.limit < Infinity && typeof this.limit === 'number')
-      q += `\r\nLIMIT ${this.limit}`;
-
-    if (this.offset > 0 && typeof this.offset === 'number')
-      q += `\r\nOFFSET ${this.offset}`;
-
+    q += ';';
     return q;
   }
 }
 
-type BindingMap = { [index: string]: any };
+type QBaseAny<T, U, V extends QType> = Omit<QBase<T, U, V>, 'q'>
 
-class Operation {
+type QSelectable<T, U> = Pick<QBaseAny<T, U, 'SELECT'>, 'select' | 'innerJoin' | 'where' | 'toSql'>
+type QSelected<T, U> = Pick<QSelectable<T, U>, 'where' | 'toSql'>
+
+type QFiltered<T, U> = QSelected<T, U>
+
+type QUpdateable<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'innerJoin' | 'set'>
+type QUpdated<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'where' | 'toSql'>
+
+type QDeletable<T, U> = Pick<QBaseAny<T, U, 'DELETE'>, 'innerJoin' | 'tables' | 'where' | 'toSql'>
+
+type RetValJoin<T, U, V extends QType> = V extends 'SELECT' ? QSelectable<T, U> : V extends 'UPDATE' ? QUpdateable<T, U> : V extends 'DELETE' ? QDeletable<T, U> : any;
+
+type QColTuple<T> = [QCol<T>, T];
+type ValidTuples = QColTuple<string> | QColTuple<number> | QCol<boolean> | [QCol<number>, QCol<number>] | [QCol<string>, QCol<string>] | [QCol<boolean>, QCol<boolean>];
+
+interface IQueryable {
+  q: Query;
+  toSql(opts?: { ptr_var: number; ptr_table: number }): string;
+}
+
+class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
+
   constructor(
-    public str: string,
-    public bindings?: BindingMap
+    private model: T,
+    public q: Query,
+    private selected: TSelected,
+    private q_base: BaseType
   ) { }
 
-  asCol(alias = '') {
-    const path = `(${this.str})`;
-    return new QCol(alias, path, this.bindings).asAlias();
+  innerJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => QCol<TKey>, t2On: (model: QColMap<J>) => QCol<TKey>, join: (tModel: T, joined: QColMap<J>) => U) {
+
+    const qTable = new QTable(toJoin.model, toJoin.name);
+    this.q.scope.push(qTable);
+
+    const model = join(this.model, qTable.cols);
+
+    this.q.joins.push(operation((q) => `INNER JOIN ${qTable.path} ${q.tableAlias(qTable)} ON ${q.colRef(t1On(this.model))} = ${q.colRef(t2On(qTable.cols))}`));
+
+    return new QBase(model, this.q, this.selected, this.q_base) as RetValJoin<U, TSelected, BaseType>;
+  }
+
+  select<U extends Record<string, QCol<unknown>>>(fn: (model: T) => U): QSelected<T, U> {
+    const selected = fn(this.model);
+    const values: [string, QCol<unknown>][] = [];
+
+    for (const key in selected) {
+
+      if (selected[key].useAlias && !selected[key].alias)
+        selected[key].alias = key;
+
+      values.push([key, selected[key]]);
+
+    }
+
+    this.q.selected = Object.fromEntries(values);
+    return new QBase(this.model, this.q, selected, this.q_base);
+  }
+
+  set(fn: (model: T) => ValidTuples[]): QUpdated<T, T> {
+
+    const tuples = fn(this.model) as [QCol<unknown>, ExpressionArg<unknown>][];
+
+    for (const pair of tuples)
+      this.q.updates.push([pair[0], toCol(this.q, pair[1])]);
+
+    return new QBase(this.model, this.q, this.model, this.q_base);
+  }
+
+  where(fn: (model: TSelected, data: T) => QCol<unknown>): QFiltered<T, TSelected> {
+    this.q.wheres.push(fn(this.selected!, this.model));
+    return this;
+  }
+
+  tables(...tables: Table<unknown>[]): QDeletable<T, T> {
+
+    const deletes: QTable<unknown>[] = [];
+    for (const table of tables) {
+      const toDelete = this.q.scope.find(t => t.base instanceof table.ctor);
+      if (!toDelete)
+        throw new Error(`Table ${table.name} not registered in query scope`);
+      deletes.push(toDelete);
+    }
+
+    this.q.deletes = deletes;
+
+    return new QBase(this.model, this.q, this.model, this.q_base);
+  }
+
+  toSql(opts?: { ptr_var: number; ptr_table: number }) {
+    return this.q.toSql(opts);
   }
 }
 
-type ExpressionArg = QCol<unknown> | Operation | number | string;
-type ExpressionArgTyped<T> = QCol<T> | Operation | T;
 
-function _paramaterize(arg: QCol<unknown> | Operation | number | string) {
-  let param = '';
-  let binding: BindingMap | undefined = undefined;
+class QInsertable<T>{
+  constructor(
+    private model: QColMap<T>,
+    private q: Query
+  ) { }
 
-  if (arg instanceof QCol) {
-    param = arg.alias || arg.path;
-    binding = arg.bindings;
-  } else if (arg instanceof Operation) {
-    param = arg.str;
-    binding = arg.bindings;
-  } else if (typeof arg === 'string' || typeof arg === 'number') {
-    const key = `value_${nextPtr()}`;
-    binding = { [key]: arg };
-    param = `@${key}`;
+  values(...values: (QExpressionMap<T> | QSelected<unknown, QColMap<T>>)[]) {
+
+    if (!Object.keys(this.q.insert.cols).length)
+      this.q.insert.cols = this.model;
+
+    for (const value of values) {
+
+      let col: QCol<unknown>;
+
+      if (value instanceof QBase) {
+
+        const orderedCols = Object.fromEntries(Object.keys(this.q.insert.cols).map(key => [key, value.q.selected[key]]));
+        value.q.selected = orderedCols;
+
+        col = subquery(value);
+
+      } else {
+
+        const orderedCols = Object.fromEntries(Object.keys(this.q.insert.cols).map(key => [key, (value as Record<string, any>)[key]])) as QExpressionMap<T>;
+        col = new QCol<unknown>('', undefined, (q) => Object.keys(this.q.insert.cols).map((key) => {
+
+          const val = (value as Record<string, any>)[key] as ExpressionArg<unknown>;
+
+          return q.colRef(toCol(q, val));
+
+        }).join(', '))
+
+      }
+
+      this.q.insert.values.push(col);
+
+    }
+
+    return this;
   }
 
-  return { param, binding };
+  toSql(opts?: { ptr_var: number; ptr_table: number }) {
+    return this.q.toSql(opts);
+  }
 }
 
-export function from<T>(table: Table<T>): QSelectable<T> {
-  const qTable = new QTable(table._base, table.name, `T${nextPtr()}`);
-
-  return new QSelectable<T>(qTable, new QueryBuilder(qTable, 'SELECT', qTable._cols_!));
+export function from<T>(table: Table<T>): QSelectable<QColMap<T>, QColMap<T>> {
+  const qTable = new QTable(table.model, table.name);
+  const q = new Query(qTable, 'SELECT');
+  q.selected = qTable.cols;
+  return new QBase(qTable.cols, q, qTable.cols, 'SELECT');
 }
 
 export function insertInto<T>(table: Table<T>) {
-  const qTable = new QTable(table._base, table.name, `T${nextPtr()}`);
-
-  return new QInsertable<T>(qTable, new QueryBuilder(qTable, 'INSERT'));
+  const qTable = new QTable(table.model, table.name);
+  const q = new Query(qTable, 'INSERT');
+  return new QInsertable(qTable.cols, q);
 }
 
-function _symbolOperation(col: ExpressionArg, value: ExpressionArg, symbol: '<' | '>' | '=' | '<>' | '<=' | '>=') {
-
-  let bindings: BindingMap = {};
-  let left = '';
-  let right = '';
-
-  {
-    const { param, binding } = _paramaterize(col);
-    left = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  {
-    const { param, binding } = _paramaterize(value);
-    right = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  return new Operation(`${left} ${symbol} ${right}`, Object.keys(bindings).length ? bindings : undefined);
-
+export function update<T>(table: Table<T>): QUpdateable<QColMap<T>, QColMap<T>> {
+  const qTable = new QTable(table.model, table.name);
+  const q = new Query(qTable, 'UPDATE');
+  return new QBase(qTable.cols, q, qTable.cols, 'UPDATE');
 }
 
-export function equals(col: ExpressionArg, value: ExpressionArg) {
-  return _symbolOperation(col, value, '=');
+export function deleteFrom<T>(table: Table<T>): QDeletable<QColMap<T>, QColMap<T>> {
+  const qTable = new QTable(table.model, table.name);
+  const q = new Query(qTable, 'DELETE');
+  return new QBase(qTable.cols, q, qTable.cols, 'DELETE');
 }
 
-export function notEquals(col: ExpressionArg, value: ExpressionArg) {
-  return _symbolOperation(col, value, '<>');
+export function abs(value: ExpressionArg<number>) {
+  return operation((q) => `ABS(${q.colRef(toCol(q, value))})`);
 }
 
-export function greaterThan(col: ExpressionArg, value: ExpressionArg) {
-  return _symbolOperation(col, value, '>');
-}
-
-export function lessThan(col: ExpressionArg, value: ExpressionArg) {
-  return _symbolOperation(col, value, '<');
-}
-
-export function greaterThanOrEqualTo(col: ExpressionArg, value: ExpressionArg) {
-  return _symbolOperation(col, value, '>=');
-}
-
-export function lessThanOrEqualTo(col: ExpressionArg, value: ExpressionArg) {
-  return _symbolOperation(col, value, '<=');
-}
-
-function _andOrBase(args: ExpressionArg[], keyword: 'AND' | 'OR') {
-  let strings: string[] = [];
-  let bindings: { [index: string]: any } = {};
-
-  if (args.length)
-    for (const arg of args) {
-      const { param, binding } = _paramaterize(arg);
-      strings.push(param);
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-  return new Operation(`(${strings.join(` ${keyword} `)})`, Object.keys(bindings).length ? bindings : undefined);
-}
-
-export function and(...ops: ExpressionArg[]) {
-  return _andOrBase(ops, 'AND');
-}
-
-export function or(...ops: ExpressionArg[]) {
-  return _andOrBase(ops, 'OR');
-}
-
-export function not(arg: ExpressionArg) {
-  const { param, binding } = _paramaterize(arg);
-  return new Operation(`NOT(${param})`, binding);
-}
-
-function _aggregateNumberFnBase(arg: ExpressionArg, key: 'COUNT' | 'MAX' | 'MIN' | 'AVG' | 'SUM') {
-  const { param, binding } = _paramaterize(arg);
-  let str = `${key}(${param})`;
-  return new QCol<number>('', str, binding);
-}
-
-export function count(arg: ExpressionArg) {
-  return _aggregateNumberFnBase(arg, 'COUNT');
-}
-
-export function max(arg: ExpressionArg) {
-  return _aggregateNumberFnBase(arg, 'MAX');
-}
-
-export function min(arg: ExpressionArg) {
-  return _aggregateNumberFnBase(arg, 'MIN');
-}
-
-export function avg(arg: ExpressionArg) {
-  return _aggregateNumberFnBase(arg, 'AVG');
-}
-
-export function sum(arg: ExpressionArg) {
-  return _aggregateNumberFnBase(arg, 'SUM');
-}
-
-function _arithmeticBase(symbol: '+' | '-' | '/' | '*' | '%', args: ExpressionArg[]) {
-  let bindings: BindingMap = {};
-  let strings: string[] = [];
-
-  if (args.length)
-    for (const arg of args) {
-      const { param, binding } = _paramaterize(arg);
-      strings.push(param);
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-  return new Operation(`${strings.join(` ${symbol} `)}`, Object.keys(bindings).length ? bindings : undefined);
-}
-
-export function add(...args: ExpressionArg[]) {
-  return _arithmeticBase('+', args);
-}
-
-export function subtract(...args: ExpressionArg[]) {
-  return _arithmeticBase('-', args);
-}
-
-export function multiply(...args: ExpressionArg[]) {
-  return _arithmeticBase('*', args);
-}
-
-export function divide(...args: ExpressionArg[]) {
-  return _arithmeticBase('/', args);
-}
-
-export function modulo(...args: ExpressionArg[]) {
-  return _arithmeticBase('%', args);
-}
-
-function _bitwiseBase(symbol: '&' | '|' | '^', args: ExpressionArg[]) {
-  let bindings: BindingMap = {};
-  let strings: string[] = [];
-
-  if (args.length)
-    for (const arg of args) {
-      const { param, binding } = _paramaterize(arg);
-      strings.push(param);
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-  return new Operation(`${strings.join(` ${symbol} `)}`, Object.keys(bindings).length ? bindings : undefined);
-}
-
-export function bitwiseAnd(...args: ExpressionArg[]) {
-  return _bitwiseBase('&', args);
-}
-
-export function bitwiseOr(...args: ExpressionArg[]) {
-  return _bitwiseBase('|', args);
-}
-
-export function bitwiseOrInclusive(...args: ExpressionArg[]) {
-  return _bitwiseBase('^', args);
-}
-
-export function like(col: ExpressionArg, arg: ExpressionArg) {
-  let bindings: { [index: string]: any } = {};
-  let source = '';
-  let expression = '';
-
-  {
-    const { param, binding } = _paramaterize(arg);
-    source = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  {
-    const { param, binding } = _paramaterize(arg);
-    expression = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  return new Operation(`${source} LIKE ${expression}`, Object.keys(bindings).length ? bindings : undefined);
-}
-
-export function concat(...args: ExpressionArg[]) {
-  let strings: string[] = [];
-  let bindings: { [index: string]: any } = {};
-
-  if (args.length)
-    for (const arg of args) {
-      const { param, binding } = _paramaterize(arg);
-      strings.push(param);
-
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-  return new Operation(`CONCAT(${strings.join(', ')})`, Object.keys(bindings).length ? bindings : undefined);
-}
-
-export function isIn(col: ExpressionArg, ...args: ExpressionArg[]) {
-
-  let strings: string[] = [];
-  let bindings: BindingMap = {};
-  let source = '';
-
-  {
-    const { param, binding } = _paramaterize(col);
-    source = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  if (args.length)
-    for (const arg of args) {
-      const { param, binding } = _paramaterize(arg);
-      strings.push(param);
-      if (binding)
-        if (binding)
-          bindings = { ...bindings, ...binding };
-    }
-
-  return new Operation(`${source} IN (${strings.join(', ')})`, Object.keys(bindings).length ? bindings : undefined);
-
-}
-
-export function between(arg: ExpressionArg, lowerLimit: ExpressionArg, upperLimit: ExpressionArg): Operation {
-
-  let bindings: BindingMap = {};
-  let lower = '';
-  let upper = '';
-  let source = '';
-
-  {
-    const { param, binding } = _paramaterize(arg);
-    source = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  {
-    const { param, binding } = _paramaterize(lowerLimit);
-    lower = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  {
-    const { param, binding } = _paramaterize(upperLimit);
-    upper = param;
-    if (binding)
-      bindings = { ...bindings, ...binding };
-  }
-
-  return new Operation(`${source} BETWEEN ${lower} AND ${upper}`, bindings);
-}
-
-export function raw<T>(value: T) {
-  return new QCol<T>('', escape(value));
-}
-
-export function isNotNull(arg: ExpressionArg) {
-  const { param, binding } = _paramaterize(arg);
-  return new Operation(`${param} IS NOT NULL`, binding);
-}
-
-export function isNull(arg: ExpressionArg) {
-  const { param, binding } = _paramaterize(arg);
-  return new Operation(`${param} IS NULL`, binding);
-}
-
-export function coalesce(...args: ExpressionArg[]) {
-  let bindings: BindingMap = {};
-  let strings: string[] = [];
-
-  if (args.length)
-    for (const arg of args) {
-      const { param, binding } = _paramaterize(arg);
-      strings.push(param);
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-  return new Operation(`COALESCE(${strings.join(', ')})`, Object.keys(bindings).length ? bindings : undefined);
-}
-
-export function exists(arg: QTypeSelected<unknown, unknown>) {
-  return new Operation(`EXISTS(${arg.toSql()})`);
-}
-
-export function any(arg: ExpressionArg, operator: '=' | '<' | '>' | '<>' | '<=' | '>=', subQuery: QTypeSelected<unknown, unknown>) {
-  const { param, binding } = _paramaterize(arg);
-  return new Operation(`${param} ${operator} ANY (${subQuery.toSql()})`, binding);
-}
-
-export function all(arg: ExpressionArg, operator: '=' | '<' | '>' | '<>' | '<=' | '>=', subQuery: QTypeSelected<unknown, unknown>) {
-  const { param, binding } = _paramaterize(arg);
-  return new Operation(`${param} ${operator} ALL (${subQuery.toSql()})`, binding);
-}
-
-export function caseFn(...args: { when: ExpressionArg, then: ExpressionArg }[]) {
-  let bindings: BindingMap = {};
-
-  return new Operation(`\r\n  (CASE\r\n${args.map(arg => {
-
-    let when = '';
-    let then = '';
-
-    {
-      const { param, binding } = _paramaterize(when);
-      when = param;
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-    {
-      const { param, binding } = _paramaterize(then);
-      then = param;
-      if (binding)
-        bindings = { ...bindings, ...binding };
-    }
-
-    return `    WHEN ${when} THEN ${then}`;
-
-  }).join('\r\n')}\r\n  END)\r\n`, bindings);
-}
-
-export function ifNull(expression: ExpressionArg, alt_value: ExpressionArg) {
-  let bindings: BindingMap = {};
-
-  const exp = _paramaterize(expression);
-  if (exp.binding)
-    bindings = { ...bindings, ...exp.binding };
-
-  const alt = _paramaterize(alt_value);
-  if (alt.binding)
-    bindings = { ...bindings, ...alt.binding };
-
-  return new Operation(`IFNULL(${exp.param}, ${alt.param})`, bindings);
-}
-
-export function groupConcat(arg: ExpressionArg) {
-  const { param, binding } = _paramaterize(arg);
-  return new Operation(`GROUP_CONCAT(${param})`, binding);
-}
