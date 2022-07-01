@@ -1,4 +1,4 @@
-import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom } from './index-2';
+import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom } from './index';
 import { escape } from 'mysql2';
 
 registerEscaper(escape);
@@ -27,7 +27,8 @@ const foobars = new Table('foobars', FooBar);
 console.log('start')
 console.time();
 
-const query = deleteFrom(foos);
+const query = deleteFrom(foos)
+.toSql();
 
 
 console.timeEnd();

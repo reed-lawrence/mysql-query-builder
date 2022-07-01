@@ -452,10 +452,10 @@ export function update<T>(table: Table<T>): QUpdateable<QColMap<T>, QColMap<T>> 
 export function deleteFrom<T>(table: Table<T>): QDeletable<QColMap<T>, QColMap<T>> {
   const qTable = new QTable(table.model, table.name);
   const q = new Query(qTable, 'DELETE');
+  q.deletes = [qTable];
   return new QBase(qTable.cols, q, qTable.cols, 'DELETE');
 }
 
 export function abs(value: ExpressionArg<number>) {
   return operation((q) => `ABS(${q.colRef(toCol(q, value))})`);
 }
-
