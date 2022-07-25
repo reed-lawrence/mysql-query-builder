@@ -34,7 +34,7 @@ class QCol<T>{
   public useAlias = false
 
   public id = randomUUID();
-  public value?: QCol<T>;
+  public default?: T;
   public alias = '';
 
   constructor(
@@ -66,6 +66,8 @@ function subquery<T>(value: IQueryable) {
 
   return new QCol<T>('', undefined, (q) => {
 
+    value.q.pushVariable = q.pushVariable;
+
     const output = value.toSql({
       ptr_var: q.ptr_var,
       ptr_table: q.ptr_table
@@ -74,7 +76,7 @@ function subquery<T>(value: IQueryable) {
     q.ptr_var = value.q.ptr_var;
     q.ptr_table = value.q.ptr_table;
 
-    return output;
+    return output.replace(/;/, '');
 
   })
 }
@@ -125,7 +127,11 @@ export class Query {
   variables: string[] = [];
   selected: Record<string, QCol<unknown>> = {};
   wheres: QCol<unknown>[] = [];
+  havings: QCol<unknown>[] = [];
   joins: QCol<void>[] = [];
+  unions: { type?: 'ALL', op: QCol<void> }[] = [];
+  groupBys: QCol<unknown>[] = [];
+  orderBys: QCol<unknown>[] = [];
 
   insert = {
     cols: {} as QColMap<unknown>,
@@ -142,6 +148,8 @@ export class Query {
   ) {
     this.scope = [from];
   }
+
+  pushVariable = (...variables: string[]) => this.variables.push(...variables);
 
   public tableAlias(table: QTable<unknown>) {
     let alias = this.aliases.get(table.id);
@@ -189,7 +197,7 @@ export class Query {
     const escaped = escape(value);
     const binding = `@value_${this.ptr_var++}`;
     const str = `${binding} = ${escaped};`;
-    this.variables.push(str);
+    this.pushVariable(str);
     return binding;
   }
 
@@ -279,6 +287,22 @@ export class Query {
     if (this.wheres?.length)
       q += `\r\nWHERE ${this.wheres.map(clause => `(${clause.defer!.call(clause, this)})`).join(' AND ')}`;
 
+    if (this.havings?.length)
+      q += `\r\nHAVING ${this.havings.map(clause => `(${clause.defer!.call(clause, this)})`).join(' AND ')}`;
+
+    if (this.groupBys?.length)
+      q += `\r\nGROUP BY ${this.groupBys.map(col => this.colRef(col)).join(', ')}`
+
+    if (this.unions?.length)
+      for (const union of this.unions) {
+        if (union.type === 'ALL')
+          q += '\r\nUNION ALL';
+        else
+          q += `\r\nUNION`;
+
+        q += `\r\n${union.op.defer!.call(union, this)}`;
+      }
+
     if (this.variables?.length)
       q = this.variables.join('\r\n') + '\r\n' + q;
 
@@ -288,16 +312,21 @@ export class Query {
 }
 
 type QBaseAny<T, U, V extends QType> = Omit<QBase<T, U, V>, 'q'>
+type Joinable = 'innerJoin' | 'leftJoin' | 'rightJoin' | 'crossJoin';
+type Unionable = 'union' | 'unionAll';
+type QSelectable<T, U> = Pick<QBaseAny<T, U, 'SELECT'>, 'select' | Joinable | 'where' | 'having' | Unionable | 'toSql' | 'groupBy'>
+type QSelected<T, U> = Pick<QSelectable<T, U>, 'where' | 'having' | Unionable | 'toSql' | 'groupBy'>
 
-type QSelectable<T, U> = Pick<QBaseAny<T, U, 'SELECT'>, 'select' | 'innerJoin' | 'where' | 'toSql'>
-type QSelected<T, U> = Pick<QSelectable<T, U>, 'where' | 'toSql'>
+type QWhere<T, U> = QSelected<T, U>
+type QHaving<T, U> = Omit<QWhere<T, U>, 'where' | 'groupBy'>
+type QUnion<T, U> = Pick<QSelected<T, U>, Unionable | 'toSql' | 'groupBy'>
+type QGrouped<T, U, V extends QType> = Pick<QBaseAny<T, U, V>, 'groupBy' | 'toSql'>
+type QOrdered<T, U, V extends QType> = Pick<QBaseAny<T, U, V>, 'orderBy' | 'toSql'>
 
-type QFiltered<T, U> = QSelected<T, U>
+type QUpdateable<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, Joinable | 'set' | 'groupBy'>
+type QUpdated<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'where' | 'toSql' | 'groupBy'>
 
-type QUpdateable<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'innerJoin' | 'set'>
-type QUpdated<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'where' | 'toSql'>
-
-type QDeletable<T, U> = Pick<QBaseAny<T, U, 'DELETE'>, 'innerJoin' | 'tables' | 'where' | 'toSql'>
+type QDeletable<T, U> = Pick<QBaseAny<T, U, 'DELETE'>, Joinable | 'tables' | 'where' | 'toSql' | 'groupBy'>
 
 type RetValJoin<T, U, V extends QType> = V extends 'SELECT' ? QSelectable<T, U> : V extends 'UPDATE' ? QUpdateable<T, U> : V extends 'DELETE' ? QDeletable<T, U> : any;
 
@@ -318,17 +347,39 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
     private q_base: BaseType
   ) { }
 
-  innerJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => QCol<TKey>, t2On: (model: QColMap<J>) => QCol<TKey>, join: (tModel: T, joined: QColMap<J>) => U) {
+  private _join<J, TKey, U extends Record<string, QColMap<unknown>>>(
+    joinType: 'INNER' | 'LEFT' | 'RIGHT' | 'CROSS',
+    toJoin: Table<J>,
+    t1On: (model: T) => QCol<TKey>,
+    t2On: (model: QColMap<J>) => QCol<TKey>,
+    join: (tModel: T, joined: QColMap<J>) => U) {
 
     const qTable = new QTable(toJoin.model, toJoin.name);
     this.q.scope.push(qTable);
 
     const model = join(this.model, qTable.cols);
 
-    this.q.joins.push(operation((q) => `INNER JOIN ${qTable.path} ${q.tableAlias(qTable)} ON ${q.colRef(t1On(this.model))} = ${q.colRef(t2On(qTable.cols))}`));
+    this.q.joins.push(operation((q) => `${joinType} JOIN ${qTable.path} ${q.tableAlias(qTable)} ON ${q.colRef(t1On(this.model))} = ${q.colRef(t2On(qTable.cols))}`));
 
-    return new QBase(model, this.q, this.selected, this.q_base) as RetValJoin<U, TSelected, BaseType>;
+    return new QBase(model, this.q, this.selected, this.q_base);
   }
+
+  innerJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => QCol<TKey>, t2On: (model: QColMap<J>) => QCol<TKey>, join: (tModel: T, joined: QColMap<J>) => U) {
+    return this._join('INNER', toJoin, t1On, t2On, join) as RetValJoin<U, TSelected, BaseType>;
+  }
+
+  rightJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => QCol<TKey>, t2On: (model: QColMap<J>) => QCol<TKey>, join: (tModel: T, joined: QColMap<J>) => U) {
+    return this._join('RIGHT', toJoin, t1On, t2On, join) as RetValJoin<U, TSelected, BaseType>;
+  }
+
+  leftJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => QCol<TKey>, t2On: (model: QColMap<J>) => QCol<TKey>, join: (tModel: T, joined: QColMap<J>) => U) {
+    return this._join('LEFT', toJoin, t1On, t2On, join) as RetValJoin<U, TSelected, BaseType>;
+  }
+
+  crossJoin<J, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => QCol<TKey>, t2On: (model: QColMap<J>) => QCol<TKey>, join: (tModel: T, joined: QColMap<J>) => U) {
+    return this._join('CROSS', toJoin, t1On, t2On, join) as RetValJoin<U, TSelected, BaseType>;
+  }
+
 
   select<U extends Record<string, QCol<unknown>>>(fn: (model: T) => U): QSelected<T, U> {
     const selected = fn(this.model);
@@ -357,7 +408,7 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
     return new QBase(this.model, this.q, this.model, this.q_base);
   }
 
-  where(fn: (model: TSelected, data: T) => QCol<unknown>): QFiltered<T, TSelected> {
+  where(fn: (model: TSelected, data: T) => QCol<unknown>): QWhere<T, TSelected> {
     this.q.wheres.push(fn(this.selected!, this.model));
     return this;
   }
@@ -375,6 +426,50 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
     this.q.deletes = deletes;
 
     return new QBase(this.model, this.q, this.model, this.q_base);
+  }
+
+  having(fn: (model: TSelected, data: T) => QCol<unknown>): QHaving<T, TSelected> {
+    this.q.havings.push(fn(this.selected, this.model));
+    return this;
+  }
+
+  union(q2: QSelected<unknown, TSelected>) {
+    const op = subquery<void>(q2 as unknown as IQueryable)
+    this.q.unions.push({ op });
+    return new QBase(this.model, this.q, this.model, this.q_base) as unknown as QUnion<T, TSelected>;
+  }
+
+  unionAll(q2: QSelected<unknown, TSelected>) {
+    const op = subquery<void>(q2 as unknown as IQueryable)
+    this.q.unions.push({ type: 'ALL', op });
+    return new QBase(this.model, this.q, this.model, this.q_base) as unknown as QUnion<T, TSelected>;
+  }
+
+  groupBy(fn: (model: TSelected, data: T) => QCol<unknown> | QCol<unknown>[]): QGrouped<T, TSelected, BaseType> {
+    const obj = fn(this.selected, this.model);
+
+    if (obj instanceof QCol)
+      this.q.groupBys.push(obj);
+    else if (Array.isArray(obj))
+      this.q.groupBys.push(...obj);
+    else
+      throw new Error(`groupBy predicate function must be QCol or QCol[]`);
+
+    return new QBase(this.model, this.q, this.selected, this.q_base);
+  }
+
+  orderBy(fn: (model: TSelected, data: T) => QCol<unknown> | QCol<unknown>[]) {
+    const obj = fn(this.selected, this.model);
+
+    if (obj instanceof QCol)
+      this.q.orderBys.push(obj);
+    else if (Array.isArray(obj))
+      this.q.orderBys.push(...obj);
+    else
+      throw new Error(`orderBy predicate function must be QCol or QCol[]`);
+
+    return this as QOrdered<T, TSelected, BaseType>
+
   }
 
   toSql(opts?: { ptr_var: number; ptr_table: number }) {
@@ -456,6 +551,77 @@ export function deleteFrom<T>(table: Table<T>): QDeletable<QColMap<T>, QColMap<T
   return new QBase(qTable.cols, q, qTable.cols, 'DELETE');
 }
 
+// #region Functions
+export function raw<T = number | string | boolean>(value: T) {
+  return operation<typeof value>((q) => `${q.colRef(toCol(q, value))}`);
+}
+
+export function count(value: QCol<unknown>) {
+  return operation<number>((q) => `COUNT(${q.colRef(value)})`);
+}
+
+// #endregion
+
+// #region Equality Operations
+
+function _equalityOp<T>(target: ExpressionArg<T>, value: ExpressionArg<T>, symbol: '=' | '<>' | '<=' | '>=' | '<' | '>') {
+  return operation<boolean>((q) => `${q.colRef(toCol(q, target))} ${symbol} ${q.colRef(toCol(q, value))}`);
+}
+
+export function isEqualTo<T>(target: ExpressionArg<T>, value: ExpressionArg<T>) {
+  return _equalityOp(target, value, '=');
+}
+
+export function isGreaterThanOrEqualTo<T>(target: ExpressionArg<T>, value: ExpressionArg<T>) {
+  return _equalityOp(target, value, '>=');
+}
+
+export function isLessThanOrEqualTo<T>(target: ExpressionArg<T>, value: ExpressionArg<T>) {
+  return _equalityOp(target, value, '<=');
+}
+
+export function isNotEqualTo<T>(target: ExpressionArg<T>, value: ExpressionArg<T>) {
+  return _equalityOp(target, value, '<>');
+}
+
+export function isGreaterThan<T>(target: ExpressionArg<T>, value: ExpressionArg<T>) {
+  return _equalityOp(target, value, '>');
+}
+
+export function isLessThan<T>(target: ExpressionArg<T>, value: ExpressionArg<T>) {
+  return _equalityOp(target, value, '<');
+}
+
+//#endregion
+
+//#region Artihmatic Operations
+
+function _arithmaticOp(target: ExpressionArg<number>, value: ExpressionArg<number>, symbol: '+' | '-' | '/' | '*' | '%') {
+  return operation<number>((q) => `(${q.colRef(toCol(q, target))} ${symbol} ${q.colRef(toCol(q, value))})`);
+}
+
+export function add(target: ExpressionArg<number>, value: ExpressionArg<number>) {
+  return _arithmaticOp(target, value, '+');
+}
+
+export function subtract(target: ExpressionArg<number>, value: ExpressionArg<number>) {
+  return _arithmaticOp(target, value, '-');
+}
+
+export function divide(target: ExpressionArg<number>, value: ExpressionArg<number>) {
+  return _arithmaticOp(target, value, '/');
+}
+
+export function multiply(target: ExpressionArg<number>, value: ExpressionArg<number>) {
+  return _arithmaticOp(target, value, '*');
+}
+
+export function modulo(target: ExpressionArg<number>, value: ExpressionArg<number>) {
+  return _arithmaticOp(target, value, '%');
+}
+
+//#endregion
+
 export function abs(value: ExpressionArg<number>) {
-  return operation((q) => `ABS(${q.colRef(toCol(q, value))})`);
+  return operation<number>((q) => `ABS(${q.colRef(toCol(q, value))})`);
 }
