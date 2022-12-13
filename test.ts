@@ -1,51 +1,71 @@
-import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count } from './index';
+import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, QCol, QColMap } from './index';
 import { escape } from 'mysql2';
 
 registerEscaper(escape);
 
-class Foo {
+class Post {
   id: number = 0;
   name: string = '';
   deleted = false;
 }
 
-class Bar {
+class Tag {
   id: number = 0;
   value: string = '';
+
+  post_id: number = 0;
 }
 
-class FooBar {
-  id: number = 0;
-  foo_id = 0;
-  bar_id = 0;
-}
 
-const foos = new Table('foos', Foo);
-const bars = new Table('bars', Bar);
-const foobars = new Table('foobars', FooBar);
+const posts = new Table('posts', Post);
+const tags = new Table('tags', Tag);
 
-console.log('start')
-console.time();
+const query = from(tags)
+  .innerJoin(
+    from(posts).select(o => o).limit(25),
+    t1 => t1.post_id,
+    t2 => t2.id,
+    (tag, post) => ({ tag, post })
+  ).select((o) => ({
+    post_id: o.post.id,
+    post_name: o.post.name,
+    post_deleted: o.post.deleted,
 
-
-// const query = insertInto(foos)
-//   .values(
-//     from(bars).select(o => ({
-//       id: o.id,
-//       name: o.value,
-//       deleted: raw(false)
-//     }))
-//   )
-//   .toSql()
-
-const query = from(foos)
-  .innerJoin(foobars, t1 => t1.id, t2 => t2.foo_id, (foo, foobars) => ({ foo, foobars }))
-  .select(o => ({
-    ...o.foo,
-    bars: count(o.foobars.id)
-  }))
-  .groupBy((o) => o.id)
+    tag_id: o.tag.id,
+    tag_value: o.tag.value
+  })).where(o => isEqualTo(o.post_deleted, false))
   .toSql();
 
-console.timeEnd();
 console.log(query);
+
+type Callable = {
+  (...args: any[]): string;
+}
+
+type Is = Callable & {
+  not: Callable;
+  greater: {
+    than: Callable;
+    or: Equality
+  }
+};
+
+type Equality = {
+  than: Callable
+  or: Equality;
+  less: Equality;
+}
+
+type ColExt<T> = QCol<T> & {
+  is: Is;
+  in: any;
+  equals: Callable;
+};
+
+let foo: ColExt<string> = {} as any;
+
+foo.is.greater.or.less.than(15);
+foo.is.not(null);
+foo.equals(1);
+foo.in
+
