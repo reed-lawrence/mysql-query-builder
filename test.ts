@@ -1,4 +1,4 @@
-import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, QCol, QColMap, and, match, or, greatest } from './index';
+import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, Col, QColMap, and, match, or, greatest } from './index';
 import { escape } from 'mysql2';
 import { performance, PerformanceObserver } from 'node:perf_hooks';
 
@@ -23,7 +23,7 @@ class Tag {
 const posts = new Table('posts', Post);
 const tags = new Table('tags', Tag);
 
-console.time();
+
 
 const query = from(tags)
   .innerJoin(
@@ -48,8 +48,9 @@ const query = from(tags)
     isEqualTo(o.r1, 1),
     isGreaterThan(o.r2, 0)
   ))
-  .orderBy(o => [{ col: o.r1, direction: 'desc' }, { col: o.r2, direction: 'desc' }, { col: o.post_id, direction: 'desc' }])
-  .toSql();
+  .orderBy(o => [{ col: o.r1, direction: 'desc' }, { col: o.r2, direction: 'desc' }, { col: o.post_id, direction: 'desc' }]);
 
-console.timeEnd();
+console.log(query.toSql());
+
+
 
