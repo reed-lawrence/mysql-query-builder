@@ -1,5 +1,7 @@
-import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, QCol, QColMap } from './index';
+import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, QCol, QColMap, and, match, or, greatest } from './index';
 import { escape } from 'mysql2';
+import { performance, PerformanceObserver } from 'node:perf_hooks';
+
 
 registerEscaper(escape);
 
@@ -12,6 +14,7 @@ class Post {
 class Tag {
   id: number = 0;
   value: string = '';
+  deleted = false;
 
   post_id: number = 0;
 }
@@ -19,6 +22,8 @@ class Tag {
 
 const posts = new Table('posts', Post);
 const tags = new Table('tags', Tag);
+
+console.time();
 
 const query = from(tags)
   .innerJoin(
@@ -31,41 +36,20 @@ const query = from(tags)
     post_name: o.post.name,
     post_deleted: o.post.deleted,
 
+    r1: isEqualTo(o.post.name, 'hello world'),
+    r2: match([o.post.name], { against: 'hello world', in: 'IN NATURAL LANGUAGE MODE' }),
+
     tag_id: o.tag.id,
-    tag_value: o.tag.value
-  })).where(o => isEqualTo(o.post_deleted, false))
+    tag_value: o.tag.value,
+    tag_deleted: o.tag.deleted
+  }))
+  .where(o => isEqualTo(o.post_deleted, false))
+  .having(o => or(
+    isEqualTo(o.r1, 1),
+    isGreaterThan(o.r2, 0)
+  ))
+  .orderBy(o => [{ col: o.r1, direction: 'desc' }, { col: o.r2, direction: 'desc' }, { col: o.post_id, direction: 'desc' }])
   .toSql();
 
-console.log(query);
-
-type Callable = {
-  (...args: any[]): string;
-}
-
-type Is = Callable & {
-  not: Callable;
-  greater: {
-    than: Callable;
-    or: Equality
-  }
-};
-
-type Equality = {
-  than: Callable
-  or: Equality;
-  less: Equality;
-}
-
-type ColExt<T> = QCol<T> & {
-  is: Is;
-  in: any;
-  equals: Callable;
-};
-
-let foo: ColExt<string> = {} as any;
-
-foo.is.greater.or.less.than(15);
-foo.is.not(null);
-foo.equals(1);
-foo.in
+console.timeEnd();
 
