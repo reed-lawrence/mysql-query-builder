@@ -1,4 +1,4 @@
-import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, Col, QColMap, and, match, or, greatest } from './index';
+import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, Col, QColMap, and, match, or, greatest, soundex } from './index';
 import { escape } from 'mysql2';
 import { performance, PerformanceObserver } from 'node:perf_hooks';
 
