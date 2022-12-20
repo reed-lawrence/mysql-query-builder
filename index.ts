@@ -712,30 +712,30 @@ function _equalityOp<T>(target: Arg<T>, value: Arg<T>, symbol: '=' | '<>' | '<='
   return new Col<boolean>({ defer: (q, ctx) => `${q.colRef(target, ctx)} ${symbol} ${q.colRef(value, ctx)}` });
 }
 
-export function isEqualTo<T>(target: Arg<T>, value: Arg<T>, args?: { null_safe: boolean }): Col<boolean>;
-export function isEqualTo(target: Arg<boolean | 1 | 0>, value: Arg<boolean | 1 | 0>, args?: { null_safe: boolean }): Col<boolean>;
-export function isEqualTo<T>(target: Arg<T>, value: Arg<T>, args?: { null_safe: boolean }): Col<boolean> {
+export function equalTo<T>(target: Arg<T>, value: Arg<T>, args?: { null_safe: boolean }): Col<boolean>;
+export function equalTo(target: Arg<boolean | 1 | 0>, value: Arg<boolean | 1 | 0>, args?: { null_safe: boolean }): Col<boolean>;
+export function equalTo<T>(target: Arg<T>, value: Arg<T>, args?: { null_safe: boolean }): Col<boolean> {
   return _equalityOp(target, value, args?.null_safe ? '<=>' : '=');
 }
 
-export function isGreaterThanOrEqualTo<T>(target: Arg<T>, value: Arg<T>) {
-  return _equalityOp(target, value, '>=');
-}
-
-export function isLessThanOrEqualTo<T>(target: Arg<T>, value: Arg<T>) {
-  return _equalityOp(target, value, '<=');
-}
-
-export function isNotEqualTo<T>(target: Arg<T>, value: Arg<T>) {
+export function notEqualTo<T>(target: Arg<T>, value: Arg<T>) {
   return _equalityOp(target, value, '<>');
 }
 
-export function isGreaterThan<T>(target: Arg<T>, value: Arg<T>) {
+export function greaterThan<T>(target: Arg<T>, value: Arg<T>) {
   return _equalityOp(target, value, '>');
 }
 
-export function isLessThan<T>(target: Arg<T>, value: Arg<T>) {
+export function greaterThanOrEqualTo<T>(target: Arg<T>, value: Arg<T>) {
+  return _equalityOp(target, value, '>=');
+}
+
+export function lessThan<T>(target: Arg<T>, value: Arg<T>) {
   return _equalityOp(target, value, '<');
+}
+
+export function lessThanOrEqualTo<T>(target: Arg<T>, value: Arg<T>) {
+  return _equalityOp(target, value, '<=');
 }
 
 //#endregion
@@ -1264,8 +1264,33 @@ export function from_base64(str: Arg<string>) {
   });
 }
 
-export function hex(value: Arg<string | number>) {
-  return new Col<string>({
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/string-functions.html#function_hex
+ * 
+ * For a string argument `str`, `HEX()` returns a hexadecimal string representation 
+ * of `str` where each byte of each character in `str` is converted to two hexadecimal 
+ * digits. (Multibyte characters therefore become more than two digits.) The inverse 
+ * of this operation is performed by the `UNHEX()` function.
+ * 
+ * For a numeric argument `N`, `HEX()` returns a hexadecimal string representation of 
+ * the value of `N` treated as a longlong (`BIGINT`) number. This is equivalent to 
+ * `CONV(N,10,16)`. The inverse of this operation is performed by `CONV(HEX(N),16,10)`.
+ * 
+ * For a `NULL` argument, this function returns `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT X'616263', HEX('abc'), UNHEX(HEX('abc'));
+ *         -> 'abc', 616263, 'abc'
+ * mysql> SELECT HEX(255), CONV(HEX(255),16,10);
+ *         -> 'FF', 255
+ * ```
+ * 
+ * See also: 
+ * - {@link unhex}
+ * - {@link conv}
+ */
+export function hex(value: Arg<string | number>): Col<string> {
+  return new Col({
     defer(q, context) {
       return `HEX(${q.colRef(value, context)})`;
     }
@@ -2220,6 +2245,8 @@ export function timestamp(value: Arg<string> | Date) {
 
 //#endregion
 
+// #region COMPARISON FUNCTIONS
+
 export function is(target: Arg, value: Arg | null) {
   return new Col<boolean>({
     defer(q, ctx) {
@@ -2357,6 +2384,136 @@ export function interval(...values: Arg<number>[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/string-comparison-functions.html#operator_like
+ * 
+ * Pattern matching using an SQL pattern. Returns `1` (`TRUE`) or `0` (`FALSE`). If either `expr` 
+ * or `pat` is `NULL`, the result is `NULL`.
+ * 
+ * With LIKE you can use the following two wildcard characters in the pattern:
+ * - `%` matches any number of characters, even zero characters.
+ * - `_` matches exactly one character.
+ * 
+ * ```SQL
+ * mysql> SELECT 'David!' LIKE 'David_';
+ *         -> 1
+ * mysql> SELECT 'David!' LIKE '%D%v%';
+ *         -> 1
+ * ```
+ * 
+ * As an extension to standard SQL, MySQL permits LIKE on numeric expressions.
+ * ```SQL
+ * mysql> SELECT 10 LIKE '1%';
+ *         -> 1
+ * ```
+ * 
+ * ### Escaping and Wildcard Literals
+ * 
+ * To test for literal instances of a wildcard character, precede it by the escape character. 
+ * If you do not specify the `ESCAPE` character, `\` is assumed, unless the 
+ * [`NO_BACKSLASH_ESCAPES`](https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_backslash_escapes) 
+ * SQL mode is enabled. In that case, no escape character is used.
+ * - `\%` matches one `%` character.
+ * - `\_` matches one `_`character.
+ * 
+ * ```SQL
+ * mysql> SELECT 'David!' LIKE 'David\_';
+ *         -> 0
+ * mysql> SELECT 'David_' LIKE 'David\_';
+ *         -> 1
+ * ```
+ * 
+ * To specify a different escape character, use the ESCAPE clause:
+ * ```SQL
+ * mysql> SELECT 'David_' LIKE 'David|_' ESCAPE '|';
+ *         -> 1
+ * ```
+ * 
+ * ```typescript
+ * // TypeScript
+ * like('David_', 'David|_', { escape: '|' }) // => Col<boolean> -> 'David_' LIKE 'David|_' ESCAPE '|'
+ * ```
+ * 
+ * The escape sequence should be one character long to specify the escape character, or empty 
+ * to specify that no escape character is used. The expression must evaluate as a constant at 
+ * execution time. If the 
+ * [`NO_BACKSLASH_ESCAPES`](https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_backslash_escapes) 
+ * SQL mode is enabled, the sequence cannot be empty.
+ * 
+ * ### Additional Information
+ * 
+ * The `pattern` need not be a literal string. For example, it can be specified as a string 
+ * expression or table column. In the latter case, the column must be defined as one of the MySQL 
+ * string types 
+ * [(see Section 11.3, “String Data Types”)](https://dev.mysql.com/doc/refman/8.0/en/string-types.html).
+ * 
+ * Per the SQL standard, LIKE performs matching on a per-character basis, thus it can produce results 
+ * different from the = comparison operator:
+ * 
+ * ```SQL
+ * mysql> SELECT 'ä' LIKE 'ae' COLLATE latin1_german2_ci;
+ *        -> 0
+ * mysql> SELECT 'ä' = 'ae' COLLATE latin1_german2_ci;
+ *        -> 1
+ * ```
+ * 
+ * In particular, trailing spaces are always significant. This differs from comparisons performed 
+ * with the `=` operator, for which the significance of trailing spaces in nonbinary strings (`CHAR`, `VARCHAR`, 
+ * and `TEXT` values) depends on the pad attribute of the collation used for the comparison. For more 
+ * information, see 
+ * [Trailing Space Handling in Comparisons](https://dev.mysql.com/doc/refman/8.0/en/charset-binary-collations.html#charset-binary-collations-trailing-space-comparisons).
+ * 
+ * The following two statements illustrate that string comparisons are not case-sensitive unless one of the operands 
+ * is case-sensitive (uses a case-sensitive collation or is a binary string):
+ * 
+ * ```SQL
+ * mysql> SELECT 'abc' LIKE 'ABC';
+ *         -> 1
+ * mysql> SELECT 'abc' LIKE _utf8mb4 'ABC' COLLATE utf8mb4_0900_as_cs;
+ *         -> 0
+ * mysql> SELECT 'abc' LIKE _utf8mb4 'ABC' COLLATE utf8mb4_bin;
+ *         -> 0
+ * mysql> SELECT 'abc' LIKE BINARY 'ABC';
+ *         -> 0
+ * ```
+ * 
+ */
+export function like(expr: Arg, pattern: Arg<string>, args?: { escape: Arg<string> }): Col<boolean> {
+  return new Col({
+    defer(q, context) {
+      let str = `${q.colRef(expr, context)} LIKE ${q.colRef(pattern, context)}`;
+
+      if (args?.escape)
+        str += ` ESCAPE ${q.colRef(args.escape)}`;
+
+      return str;
+    }
+  });
+}
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/string-comparison-functions.html#operator_not-like
+ * 
+ * Equivalent to: `NOT (expr LIKE pattern)`;
+ * 
+ * See also: 
+ * - {@link like}
+ */
+export function not_like(expr: Arg, pattern: Arg<string>, args?: { escape: Arg<string> }): Col<boolean> {
+  return new Col({
+    defer(q, context) {
+      let str = `${q.colRef(expr, context)} NOT LIKE ${q.colRef(pattern, context)}`;
+
+      if (args?.escape)
+        str += ` ESCAPE ${q.colRef(args.escape)}`;
+
+      return str;
+    }
+  });
+}
+
+// #endregion
+
 // #region FLOW CONTROL FUNCTIONS
 
 export type CaseArg<T, U> = { when: Arg<T>; then: Arg<U>; else?: Arg<U>; }
@@ -2400,6 +2557,32 @@ export function null_if<T>(expr1: Arg<T>, expr2: Arg<T>) {
 
 // #region BIT OPERATIONS
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#operator_bitwise-and
+ * 
+ * The result type depends on whether the arguments are evaluated as binary strings 
+ * or numbers:
+ * - Binary-string evaluation occurs when the arguments have a binary string type, 
+ * and at least one of them is not a hexadecimal literal, bit literal, or `NULL` literal. 
+ * Numeric evaluation occurs otherwise, with argument conversion to unsigned 64-bit 
+ * integers as necessary.
+ * - Binary-string evaluation produces a binary string of the same length as the arguments. 
+ * If the arguments have unequal lengths, an 
+ * [ER_INVALID_BITWISE_OPERANDS_SIZE](https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_invalid_bitwise_operands_size) 
+ * error occurs. Numeric evaluation produces an unsigned 64-bit integer.
+ * 
+ * ```SQL
+ * mysql> SELECT 29 & 15;
+ *         -> 13
+ * mysql> SELECT HEX(_binary X'FF' & b'11110000');
+ *         -> 'F0'
+ * ```
+ * If `bitwise AND` is invoked from within the mysql client, binary strings display using hexadecimal 
+ * notation, depending on the value of the 
+ * [`--binary-as-hex`](https://dev.mysql.com/doc/refman/8.0/en/mysql-command-options.html#option_mysql_binary-as-hex). 
+ * For more information about that option, see 
+ * [Section 4.5.1, “mysql — The MySQL Command-Line Client”](https://dev.mysql.com/doc/refman/8.0/en/mysql.html). 
+ */
 export function bitwise_and(...args: Arg[]) {
   return new Col({
     defer: (q, context) => args.reduce<string>((prev, arg) => {
@@ -2409,6 +2592,34 @@ export function bitwise_and(...args: Arg[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#operator_right-shift
+ * 
+ * Shifts a longlong (`BIGINT`) number or binary string to the right.
+ * 
+ * The result type depends on whether the arguments are evaluated as binary strings 
+ * or numbers:
+ * - Binary-string evaluation occurs when the arguments have a binary string type, 
+ * and at least one of them is not a hexadecimal literal, bit literal, or `NULL` literal. 
+ * Numeric evaluation occurs otherwise, with argument conversion to unsigned 64-bit 
+ * integers as necessary.
+ * - Binary-string evaluation produces a binary string of the same length as the arguments. 
+ * If the arguments have unequal lengths, an 
+ * [ER_INVALID_BITWISE_OPERANDS_SIZE](https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_invalid_bitwise_operands_size) 
+ * error occurs. Numeric evaluation produces an unsigned 64-bit integer.
+ * 
+ * ```SQL
+ * mysql> SELECT 4 >> 2;
+ *         -> 1
+ * mysql> SELECT HEX(_binary X'00FF00FF00FF' >> 8);
+ *         -> '0000FF00FF00'
+ * ```
+ * If a bitshift is invoked from within the mysql client, binary strings display using hexadecimal 
+ * notation, depending on the value of the 
+ * [`--binary-as-hex`](https://dev.mysql.com/doc/refman/8.0/en/mysql-command-options.html#option_mysql_binary-as-hex). 
+ * For more information about that option, see 
+ * [Section 4.5.1, “mysql — The MySQL Command-Line Client”](https://dev.mysql.com/doc/refman/8.0/en/mysql.html). 
+ */
 export function bitwise_shift_right(...args: Arg[]) {
   return new Col({
     defer: (q, context) => args.reduce<string>((prev, arg) => {
@@ -2418,6 +2629,34 @@ export function bitwise_shift_right(...args: Arg[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#operator_left-shift
+ * 
+ * Shifts a longlong (`BIGINT`) number or binary string to the left.
+ * 
+ * The result type depends on whether the arguments are evaluated as binary strings 
+ * or numbers:
+ * - Binary-string evaluation occurs when the arguments have a binary string type, 
+ * and at least one of them is not a hexadecimal literal, bit literal, or `NULL` literal. 
+ * Numeric evaluation occurs otherwise, with argument conversion to unsigned 64-bit 
+ * integers as necessary.
+ * - Binary-string evaluation produces a binary string of the same length as the arguments. 
+ * If the arguments have unequal lengths, an 
+ * [ER_INVALID_BITWISE_OPERANDS_SIZE](https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_invalid_bitwise_operands_size) 
+ * error occurs. Numeric evaluation produces an unsigned 64-bit integer.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 << 2;
+ *         -> 4
+ * mysql> SELECT HEX(_binary X'00FF00FF00FF' << 8);
+ *         -> 'FF00FF00FF00'
+ * ```
+ * If a bitshift is invoked from within the mysql client, binary strings display using hexadecimal 
+ * notation, depending on the value of the 
+ * [`--binary-as-hex`](https://dev.mysql.com/doc/refman/8.0/en/mysql-command-options.html#option_mysql_binary-as-hex). 
+ * For more information about that option, see 
+ * [Section 4.5.1, “mysql — The MySQL Command-Line Client”](https://dev.mysql.com/doc/refman/8.0/en/mysql.html). 
+ */
 export function bitwise_shift_left(...args: Arg[]) {
   return new Col({
     defer: (q, context) => args.reduce<string>((prev, arg) => {
@@ -2427,6 +2666,32 @@ export function bitwise_shift_left(...args: Arg[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#operator_bitwise-or
+ * 
+ * The result type depends on whether the arguments are evaluated as binary strings 
+ * or numbers:
+ * - Binary-string evaluation occurs when the arguments have a binary string type, 
+ * and at least one of them is not a hexadecimal literal, bit literal, or `NULL` literal. 
+ * Numeric evaluation occurs otherwise, with argument conversion to unsigned 64-bit 
+ * integers as necessary.
+ * - Binary-string evaluation produces a binary string of the same length as the arguments. 
+ * If the arguments have unequal lengths, an 
+ * [ER_INVALID_BITWISE_OPERANDS_SIZE](https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_invalid_bitwise_operands_size) 
+ * error occurs. Numeric evaluation produces an unsigned 64-bit integer.
+ * 
+ * ```SQL
+ * mysql> SELECT 29 | 15;
+ *         -> 31
+ * mysql> SELECT _binary X'40404040' | X'01020304';
+ *         -> 'ABCD'
+ * ```
+ * If `bitwise OR` is invoked from within the mysql client, binary strings display using hexadecimal 
+ * notation, depending on the value of the 
+ * [`--binary-as-hex`](https://dev.mysql.com/doc/refman/8.0/en/mysql-command-options.html#option_mysql_binary-as-hex). 
+ * For more information about that option, see 
+ * [Section 4.5.1, “mysql — The MySQL Command-Line Client”](https://dev.mysql.com/doc/refman/8.0/en/mysql.html). 
+ */
 export function bitwise_or(...args: Arg[]) {
   return new Col({
     defer: (q, context) => args.reduce<string>((prev, arg) => {
@@ -2436,6 +2701,36 @@ export function bitwise_or(...args: Arg[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#operator_bitwise-xor
+ * 
+ * The result type depends on whether the arguments are evaluated as binary strings 
+ * or numbers:
+ * - Binary-string evaluation occurs when the arguments have a binary string type, 
+ * and at least one of them is not a hexadecimal literal, bit literal, or `NULL` literal. 
+ * Numeric evaluation occurs otherwise, with argument conversion to unsigned 64-bit 
+ * integers as necessary.
+ * - Binary-string evaluation produces a binary string of the same length as the arguments. 
+ * If the arguments have unequal lengths, an 
+ * [ER_INVALID_BITWISE_OPERANDS_SIZE](https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_invalid_bitwise_operands_size) 
+ * error occurs. Numeric evaluation produces an unsigned 64-bit integer.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 ^ 1;
+ *         -> 0
+ * mysql> SELECT 1 ^ 0;
+ *         -> 1
+ * mysql> SELECT 11 ^ 3;
+ *         -> 8
+ * mysql> SELECT HEX(_binary X'FEDC' ^ X'1111');
+ *         -> 'EFCD'
+ * ```
+ * If a bitwise `XOR` is invoked from within the mysql client, binary strings display using hexadecimal 
+ * notation, depending on the value of the 
+ * [`--binary-as-hex`](https://dev.mysql.com/doc/refman/8.0/en/mysql-command-options.html#option_mysql_binary-as-hex). 
+ * For more information about that option, see 
+ * [Section 4.5.1, “mysql — The MySQL Command-Line Client”](https://dev.mysql.com/doc/refman/8.0/en/mysql.html). 
+ */
 export function bitwise_xor(...args: Arg[]) {
   return new Col({
     defer: (q, context) => args.reduce<string>((prev, arg) => {
@@ -2445,7 +2740,35 @@ export function bitwise_xor(...args: Arg[]) {
   });
 }
 
-export function bitwise_invert(...args: Arg[]) {
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#operator_bitwise-invert
+ * 
+ * Invert all bits.
+ * 
+ * The result type depends on whether the arguments are evaluated as binary strings 
+ * or numbers:
+ * - Binary-string evaluation occurs when the arguments have a binary string type, 
+ * and at least one of them is not a hexadecimal literal, bit literal, or `NULL` literal. 
+ * Numeric evaluation occurs otherwise, with argument conversion to unsigned 64-bit 
+ * integers as necessary.
+ * - Binary-string evaluation produces a binary string of the same length as the arguments. 
+ * If the arguments have unequal lengths, an 
+ * [ER_INVALID_BITWISE_OPERANDS_SIZE](https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_invalid_bitwise_operands_size) 
+ * error occurs. Numeric evaluation produces an unsigned 64-bit integer.
+ * 
+ * ```SQL
+ * mysql> SELECT 5 & ~1;
+ *         -> 4
+ * mysql> SELECT HEX(~X'0000FFFF1111EEEE');
+ *         -> 'FFFF0000EEEE1111'
+ * ```
+ * If a bitwise inversion is invoked from within the mysql client, binary strings display using hexadecimal 
+ * notation, depending on the value of the 
+ * [`--binary-as-hex`](https://dev.mysql.com/doc/refman/8.0/en/mysql-command-options.html#option_mysql_binary-as-hex). 
+ * For more information about that option, see 
+ * [Section 4.5.1, “mysql — The MySQL Command-Line Client”](https://dev.mysql.com/doc/refman/8.0/en/mysql.html). 
+ */
+export function bitwise_invert(...args: Arg[]): Col<any> {
   return new Col({
     defer: (q, context) => args.reduce<string>((prev, arg) => {
       const ref = q.colRef(arg, context);
@@ -2454,7 +2777,21 @@ export function bitwise_invert(...args: Arg[]) {
   });
 }
 
-export function bit_count(arg: Arg<string | number>) {
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/bit-functions.html#function_bit-count
+ * 
+ * Returns the number of bits that are set in the argument N as an unsigned 64-bit integer, or NULL if the argument is NULL
+ * 
+ * ```SQL
+ * mysql> SELECT BIT_COUNT(64), BIT_COUNT(BINARY 64);
+ *         -> 1, 7
+ * mysql> SELECT BIT_COUNT('64'), BIT_COUNT(_binary '64');
+ *         -> 1, 7
+ * mysql> SELECT BIT_COUNT(X'40'), BIT_COUNT(_binary X'40');
+ *         -> 1, 1
+ * ```
+ */
+export function bit_count(arg: Arg<string | number>): Col<number> {
   return new Col({
     defer: (q, context) => `BIT_COUNT(${q.colRef(arg, context)})`
   });

@@ -1,4 +1,4 @@
-import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, isEqualTo, add, multiply, subtract, isGreaterThan, raw, count, subquery, SelectResult, Col, QColMap, and, match, or, greatest, soundex } from './index';
+import { Table, Query, from, registerEscaper, insertInto, abs, update, deleteFrom, equalTo, add, multiply, subtract, greaterThan, raw, count, subquery, SelectResult, Col, QColMap, and, match, or, greatest, soundex } from './index';
 import { escape } from 'mysql2';
 import { performance, PerformanceObserver } from 'node:perf_hooks';
 
@@ -36,17 +36,17 @@ const query = from(tags)
     post_name: o.post.name,
     post_deleted: o.post.deleted,
 
-    r1: isEqualTo(o.post.name, 'hello world'),
+    r1: equalTo(o.post.name, 'hello world'),
     r2: match([o.post.name], { against: 'hello world', in: 'IN NATURAL LANGUAGE MODE' }),
 
     tag_id: o.tag.id,
     tag_value: o.tag.value,
     tag_deleted: o.tag.deleted
   }))
-  .where(o => isEqualTo(o.post_deleted, false))
+  .where(o => equalTo(o.post_deleted, false))
   .having(o => or(
-    isEqualTo(o.r1, 1),
-    isGreaterThan(o.r2, 0)
+    equalTo(o.r1, 1),
+    greaterThan(o.r2, 0)
   ))
   .orderBy(o => [{ col: o.r1, direction: 'desc' }, { col: o.r2, direction: 'desc' }, { col: o.post_id, direction: 'desc' }]);
 
