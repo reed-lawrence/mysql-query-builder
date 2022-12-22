@@ -986,47 +986,519 @@ export function asin(x: Arg<number>) {
   return new Col<number>({ defer: (q, ctx) => `ASIN(${q.colRef(x, ctx)})` });
 }
 
-export function atan(value: Arg<number>, val2?: Arg<number>) {
-  if (val2)
-    return new Col<number>({ defer: (q, ctx) => `ATAN(${q.colRef(value, ctx)}, ${q.colRef(val2, ctx)})` });
+/**
+ * Returns the arc tangent of `X`, that is, the value whose tangent is `X`. 
+ * Returns `NULL` if `X` is `NULL`
+ * 
+ * ```SQL
+ * mysql> SELECT ATAN(2);
+ *         -> 1.1071487177941
+ * mysql> SELECT ATAN(-2);
+ *         -> -1.1071487177941
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_atan
+ * 
+ * See also: 
+ * - {@link atan2}
+ */
+export function atan(x: Arg<number>, y?: Arg<number>) {
+  if (y)
+    return new Col<number>({ defer: (q, ctx) => `ATAN(${q.colRef(x, ctx)}, ${q.colRef(y, ctx)})` });
   else
-    return new Col<number>({ defer: (q, ctx) => `ATAN(${q.colRef(value, ctx)})` });
+    return new Col<number>({ defer: (q, ctx) => `ATAN(${q.colRef(x, ctx)})` });
 }
 
-export function atan2(val1: Arg<number>, val2: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `ATAN2(${q.colRef(val1, ctx)}, ${q.colRef(val2, ctx)})` });
+/**
+ * Returns the arc tangent of the two variables `X` and `Y`. It is similar to calculating the arc 
+ * tangent of `Y / X`, except that the signs of both arguments are used to determine the quadrant 
+ * of the result. Returns `NULL` if `X` or `Y` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT ATAN(-2,2);
+ *         -> -0.78539816339745
+ * mysql> SELECT ATAN2(PI(),0);
+ *         -> 1.5707963267949
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_atan2
+ * 
+ * See also: 
+ * - {@link atan}
+ */
+export function atan2(x: Arg<number>, y: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `ATAN2(${q.colRef(x, ctx)}, ${q.colRef(y, ctx)})` });
 }
 
-export function ceiling(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `CEILING(${q.colRef(value, ctx)})` });
+/**
+ * Returns the smallest integer value not less than X. Returns NULL if X is NULL.
+ * 
+ * ```SQL
+ * mysql> SELECT CEILING(1.23);
+ *         -> 2
+ * mysql> SELECT CEILING(-1.23);
+ *         -> -1
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_ceiling
+ */
+export function ceiling(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `CEILING(${q.colRef(x, ctx)})` });
 }
 
-export function conv(value: Arg<number | string>, from: Arg<number>, to: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `CONV(${q.colRef(value, ctx)}, ${q.colRef(from, ctx)}, ${q.colRef(to, ctx)})` });
+/**
+ * `CEIL()` is a synonym for `CEILING()`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_ceil
+ * 
+ * See also: 
+ * - {@link ceiling}
+ */
+export const ciel = ceiling;
+
+/**
+ * Converts numbers between different number bases. Returns a string representation of the number `N`, 
+ * converted from base `from_base` to base `to_base`. Returns `NULL` if any argument is `NULL`. The 
+ * argument `N` is interpreted as an integer, but may be specified as an integer or a string. The 
+ * minimum base is `2` and the maximum base is `36`. If `from_base` is a negative number, `N` is 
+ * regarded as a signed number. Otherwise, `N` is treated as unsigned. `CONV()` works with 64-bit precision.
+ * 
+ * `CONV()` returns `NULL` if any of its arguments are `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT CONV('a',16,2);
+ *         -> '1010'
+ * mysql> SELECT CONV('6E',18,8);
+ *         -> '172'
+ * mysql> SELECT CONV(-17,10,-18);
+ *         -> '-H'
+ * mysql> SELECT CONV(10+'10'+'10'+X'0a',10,10);
+ *         -> '40'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_conv
+ */
+export function conv(n: Arg<number | string>, from_base: Arg<number>, to_base: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `CONV(${q.colRef(n, ctx)}, ${q.colRef(from_base, ctx)}, ${q.colRef(to_base, ctx)})` });
 }
 
-export function cos(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `COS(${q.colRef(value, ctx)})` });
+
+/**
+ * Returns the cosine of `X`. Returns `NULL` if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT COT(12);
+ *         -> -1.5726734063977
+ * mysql> SELECT COT(0);
+ *         -- out-of-range error
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_cos
+ */
+export function cos(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `COS(${q.colRef(x, ctx)})` });
 }
 
-export function cot(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `COT(${q.colRef(value, ctx)})` });
+/**
+ * Returns the cotangent of `X`. Returns `NULL` if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT COT(12);
+ *         -> -1.5726734063977
+ * mysql> SELECT COT(0);
+ *         -> out-of-range error
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_cot
+ */
+export function cot(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `COT(${q.colRef(x, ctx)})` });
 }
 
-export function crc32(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `CRC32(${q.colRef(value, ctx)})` });
+/**
+ * Computes a cyclic redundancy check value and returns a 32-bit unsigned value. The result 
+ * is `NULL` if the argument is `NULL`. The argument is expected to be a string and (if 
+ * possible) is treated as one if it is not.
+ * 
+ * ```SQL
+ * mysql> SELECT CRC32('MySQL');
+ *         -> 3259397556
+ * mysql> SELECT CRC32('mysql');
+ *         -> 2501908538
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_crc32
+ */
+export function crc32(expr: Arg<string>) {
+  return new Col<number>({ defer: (q, ctx) => `CRC32(${q.colRef(expr, ctx)})` });
 }
 
-export function degrees(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `DEGREES(${q.colRef(value, ctx)})` });
+/**
+ * Returns the argument `X`, converted from radians to degrees. Returns `NULL` if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT DEGREES(PI());
+ *         -> 180
+ * mysql> SELECT DEGREES(PI() / 2);
+ *         -> 90
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_degrees
+ * 
+ * See also: 
+ * - {@link radians}
+ */
+export function degrees(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `DEGREES(${q.colRef(x, ctx)})` });
 }
 
-export function exp(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `EXP(${q.colRef(value, ctx)})` });
+/**
+ * Returns the value of e (the base of natural logarithms) raised to the power of `X`. The 
+ * inverse of this function is `LOG()` (using a single argument only) or `LN()`.
+ * 
+ * If `X` is `NULL`, this function returns `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT EXP(2);
+ *         -> 7.3890560989307
+ * mysql> SELECT EXP(-2);
+ *         -> 0.13533528323661
+ * mysql> SELECT EXP(0);
+ *         -> 1
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_exp
+ */
+export function exp(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `EXP(${q.colRef(x, ctx)})` });
 }
 
-export function floor(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `FLOOR(${q.colRef(value, ctx)})` });
+/**
+ * Returns the largest integer value not greater than `X`. Returns `NULL` if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT FLOOR(1.23), FLOOR(-1.23);
+ *         -> 1, -2
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_floor
+ */
+export function floor(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `FLOOR(${q.colRef(x, ctx)})` });
+}
+
+/**
+ * Returns the natural logarithm of `X`; that is, the base-e logarithm of `X`. If `X` is less 
+ * than or equal to `0.0E0`, the function returns `NULL` and a warning “Invalid argument for logarithm” 
+ * is reported. 
+ * 
+ * Returns `NULL` if X is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT LN(2);
+ *         -> 0.69314718055995
+ * mysql> SELECT LN(-2);
+ *         -> NULL
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_ln
+ */
+export function ln(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `LN(${q.colRef(x, ctx)})` });
+}
+
+/**
+ * If called with two parameters, this function returns the logarithm of `X` to the base `B`. 
+ * If `X` is less than or equal to `0`, or if `B` is less than or equal to `1`, then NULL is returned.
+ * 
+ * Returns `NULL` if `X` or `B` are `NULL`.
+ * 
+ * `LOG(B,X)` is equivalent to `LOG(X) / LOG(B)`.
+ * 
+ *  * ```SQL
+ * mysql> SELECT LOG(2,65536);
+ *         -> 16
+ * mysql> SELECT LOG(10,100);
+ *         -> 2
+ * mysql> SELECT LOG(1,100);
+ *         -> NULL
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_log
+ */
+export function log(x: Arg<number>, b: Arg<number>): Col<number>;
+
+/**
+ * If called with one parameter, this function returns the natural logarithm of `X`. If `X`
+ * is less than or equal to `0.0E0`, the function returns `NULL` and a warning “Invalid argument
+ * for logarithm” is reported. 
+ * 
+ * Returns `NULL` if `X` is `NULL`.
+ * 
+ * The inverse of this function (when called with a single argument) is the `EXP()` function.
+ * 
+ * ```SQL
+ * mysql> SELECT LOG(2);
+ *         -> 0.69314718055995
+ * mysql> SELECT LOG(-2);
+ *         -> NULL
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_log
+ */
+export function log(x: Arg<number>): Col<number>;
+export function log(x: Arg<number>, b?: Arg<number>) {
+  if (b !== undefined)
+    return new Col<number>({ defer: (q, ctx) => `LOG(${q.colRef(x, ctx)}, ${q.colRef(b, ctx)})` });
+  else
+    return new Col<number>({ defer: (q, ctx) => `LOG(${q.colRef(x, ctx)})` });
+}
+
+
+/**
+ * Returns the base-2 logarithm of `X`. If `X` is less than or equal to `0.0E0`, the function 
+ * returns `NULL` and a warning “Invalid argument for logarithm” is reported. Returns `NULL` 
+ * if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT LOG2(65536);
+ *         -> 16
+ * mysql> SELECT LOG2(-100);
+ *         -> NULL
+ * ```
+ * 
+ * `LOG2()` is useful for finding out how many bits a number requires for storage. This 
+ * function is equivalent to the expression `LOG(X) / LOG(2)`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_log2
+ * 
+ * See also: 
+ * - {@link log}
+ */
+export function log2(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `LOG2(${q.colRef(x, ctx)})` });
+}
+
+/**
+ * Returns the base-10 logarithm of `X`. If `X` is less than or equal to `0.0E0`, the function 
+ * returns `NULL` and a warning “Invalid argument for logarithm” is reported. Returns `NULL` 
+ * if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT LOG10(2);
+ *         -> 0.30102999566398
+ * mysql> SELECT LOG10(100);
+ *         -> 2
+ * mysql> SELECT LOG10(-100);
+ *         -> NULL
+ * ```
+ * 
+ * `LOG10(X)` is equivalent to `LOG(10,X)`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_log10
+ * 
+ * See also: 
+ * - {@link log}
+ */
+export function log10(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `LOG10(${q.colRef(x, ctx)})` });
+}
+
+/**
+ * Modulo operation. Returns the remainder of `N` divided by `M`. Returns 
+ * `NULL` if `M` or `N` is NULL.
+ * 
+ * ```SQL
+ * mysql> SELECT MOD(234, 10);
+ *         -> 4
+ * mysql> SELECT 253 % 7;
+ *         -> 1
+ * mysql> SELECT MOD(29, 9);
+ *         -> 2
+ * mysql> SELECT 29 MOD 9;
+ *         -> 2
+ * ```
+ * 
+ * This function is safe to use with `BIGINT` values.
+ * 
+ * `MOD()` also works on values that have a fractional part and returns the exact remainder 
+ * after division:
+ * 
+ * ```SQL
+ * mysql> SELECT MOD(34.5,3);
+ *         -> 1.5
+ * ```
+ * 
+ * `MOD(N,0)` returns `NULL`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_mod
+ * 
+ * See also: 
+ * - {@link modulo}
+ */
+export function mod(m: Arg<number>, n: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `MOD(${q.colRef(m, ctx)}, ${q.colRef(n, ctx)})` });
+}
+
+/**
+ * eturns the value of π (pi). The default number of decimal places displayed is seven, 
+ * but MySQL uses the full double-precision value internally.
+ * 
+ * ```SQL
+ * mysql> SELECT PI();
+ *         -> 3.141593
+ * mysql> SELECT PI() + 0.000000000000000000;
+ *         -> 3.141592653589793116
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_pi
+ */
+export function pi() {
+  return new Col<number>({ defer: () => `PI()` });
+}
+
+/**
+ * Returns the value of `X` raised to the power of `Y`. Returns `NULL` if `X` or `Y` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT POW(2,2);
+ *         -> 4
+ * mysql> SELECT POW(2,-2);
+ *         -> 0.25
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_pow
+ */
+export function pow(x: Arg<number>, y: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `POW(${q.colRef(x, ctx)}, ${q.colRef(y, ctx)})` });
+}
+
+/**
+ * A synonym for `POW()`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_power
+ * 
+ * See also: 
+ * - {@link pow}
+ */
+export const power = pow;
+
+
+/**
+ * Returns the argument `X`, converted from degrees to radians. (Note that π radians equals 180 degrees.) 
+ * 
+ * Returns `NULL` if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT RADIANS(90);
+ *         -> 1.5707963267949
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_radians
+ * 
+ * See also: 
+ * - {@link degrees}
+ */
+export function radians(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `RADIANS(${q.colRef(x, ctx)})` });
+}
+
+/**
+ * Returns a random floating-point value `v` in the range `0 <= v < 1.0`. To obtain a random 
+ * integer `R` in the range `i <= R < j`, use the expression `FLOOR(i + RAND() * (j − i))`. 
+ * 
+ * For example, to obtain a random integer in the range the range `7 <= R < 12`, use the 
+ * following statement:
+ * 
+ * ```SQL
+ * SELECT FLOOR(7 + (RAND() * 5));
+ * ```
+ * 
+ * If an integer argument `N` is specified, it is used as the seed value:
+ * - With a constant initializer argument, the seed is initialized once when the statement 
+ * is prepared, prior to execution.
+ * - With a nonconstant initializer argument (such as a column name), the seed is initialized with 
+ * the value for each invocation of `RAND()`.
+ * 
+ * One implication of this behavior is that for equal argument values, `RAND(N)` returns the same 
+ * value each time, and thus produces a repeatable sequence of column values. In the following 
+ * example, the sequence of values produced by `RAND(3)` is the same both places it occurs.
+ * 
+ * ```SQL
+ * mysql> CREATE TABLE t (i INT);
+ * 
+ * mysql> INSERT INTO t VALUES(1),(2),(3);
+ * 
+ * mysql> SELECT i, RAND() FROM t;
+ * --     +------+------------------+
+ * --     | i    | RAND()           |
+ * --     +------+------------------+
+ * --     |    1 | 0.61914388706828 |
+ * --     |    2 | 0.93845168309142 |
+ * --     |    3 | 0.83482678498591 |
+ * --     +------+------------------+
+ * 
+ * mysql> SELECT i, RAND(3) FROM t;
+ * --     +------+------------------+
+ * --     | i    | RAND(3)          |
+ * --     +------+------------------+
+ * --     |    1 | 0.90576975597606 |
+ * --     |    2 | 0.37307905813035 |
+ * --     |    3 | 0.14808605345719 |
+ * --     +------+------------------+
+ * 
+ * mysql> SELECT i, RAND() FROM t;
+ * --     +------+------------------+
+ * --     | i    | RAND()           |
+ * --     +------+------------------+
+ * --     |    1 | 0.35877890638893 |
+ * --     |    2 | 0.28941420772058 |
+ * --     |    3 | 0.37073435016976 |
+ * --     +------+------------------+
+ * 
+ * mysql> SELECT i, RAND(3) FROM t;
+ * --     +------+------------------+
+ * --     | i    | RAND(3)          |
+ * --     +------+------------------+
+ * --     |    1 | 0.90576975597606 |
+ * --     |    2 | 0.37307905813035 |
+ * --     |    3 | 0.14808605345719 |
+ * --     +------+------------------+
+ * ```
+ * 
+ * `RAND()` in a `WHERE` clause is evaluated for every row (when selecting from one table) 
+ * or combination of rows (when selecting from a multiple-table join). Thus, for optimizer 
+ * purposes, `RAND()` is not a constant value and cannot be used for index optimizations. 
+ * For more information, see 
+ * [Section 8.2.1.20, “Function Call Optimization”](https://dev.mysql.com/doc/refman/8.0/en/function-optimization.html).
+ * 
+ * Use of a column with `RAND()` values in an `ORDER BY` or `GROUP BY` clause may yield 
+ * unexpected results because for either clause a `RAND()` expression can be evaluated 
+ * multiple times for the same row, each time returning a different result. If the goal 
+ * is to retrieve rows in random order, you can use a statement like this:
+ * ```SQL
+ * SELECT * FROM tbl_name ORDER BY RAND();
+ * ```
+ * 
+ * To select a random sample from a set of rows, combine ORDER BY RAND() with LIMIT:
+ * ```SQL
+ * SELECT * FROM table1, table2 WHERE a=b AND c<d ORDER BY RAND() LIMIT 1000;
+ * ```
+ * `RAND()` is not meant to be a perfect random generator. It is a fast way to generate 
+ * random numbers on demand that is portable between platforms for the same MySQL version.
+ * 
+ * This function is unsafe for statement-based replication. A warning is logged if you 
+ * use this function when 
+ * [`binlog_format`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_format)
+ * is set to `STATEMENT`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_rand
+ */
+export function rand(seed?: Arg<number>) {
+  if (seed !== undefined)
+    return new Col<number>({ defer: (q, ctx) => `RAND(${q.colRef(seed, ctx)})` });
+  else
+    return new Col<number>({ defer: () => `RAND()` });
 }
 
 // #endregion
