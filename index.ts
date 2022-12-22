@@ -29,6 +29,8 @@ export type SelectResult<T> = (QColMapToNative<GetInnerType<T>> & Omit<RowDataPa
 
 type Arg<T = unknown> = Col<T> | T;
 
+export type booleanish = boolean | 0 | 1;
+
 export class Table<T> {
   public model: T;
   constructor(
@@ -69,6 +71,25 @@ export class Col<ColType = any, TParent extends object = any> {
   default?: IQColArgs<ColType, TParent>['default'];;
 
 }
+
+interface SymbolRef {
+  description: string;
+  equals(o: any): boolean;
+}
+
+export const NULL: SymbolRef = {
+  description: 'NULL',
+  equals(o) {
+    return o === this || o === null || o.description === this.description;
+  }
+};
+
+export const UNKNOWN: SymbolRef = {
+  description: 'UNKNOWN',
+  equals(o) {
+    return o === this || o.description === this.description;
+  }
+};
 
 export enum AccessContext {
   Default,
@@ -185,7 +206,11 @@ export class Query {
   toCol<T>(obj: Arg<T>) {
     if (obj instanceof Col)
       return obj;
-    else if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean')
+    else if (obj === true)
+      return new Col<boolean>({ path: 'TRUE' });
+    else if (obj === false)
+      return new Col<boolean>({ path: 'FALSE' });
+    else if (typeof obj === 'string' || typeof obj === 'number')
       return new Col<T>({ path: this.paramaterize(obj) })
     else
       throw new Error(`Cannot convert ${JSON.stringify(obj)} to QCol`);
@@ -746,36 +771,219 @@ function _arithmaticOp(target: Arg<number>, value: Arg<number>, symbol: '+' | '-
   return new Col<number>({ defer: (q, ctx) => `(${q.colRef(target, ctx)} ${symbol} ${q.colRef(value, ctx)})` });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_plus
+ * 
+ * ```SQL
+ * mysql> SELECT 3 + 5;
+ *         -> 8
+ * ```
+ */
 export function add(target: Arg<number>, value: Arg<number>) {
   return _arithmaticOp(target, value, '+');
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_minus
+ * 
+ * ```SQL
+ * mysql> SELECT 3 - 5;
+ *         -> -2
+ * ```
+ */
 export function subtract(target: Arg<number>, value: Arg<number>) {
   return _arithmaticOp(target, value, '-');
 }
 
-export function divide(target: Arg<number>, value: Arg<number>, { integer = false }) {
-  return _arithmaticOp(target, value, integer ? 'DIV' : '/');
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_minus
+ * 
+ * ```SQL
+ * mysql> SELECT 3 - 5;
+ *         -> -2
+ * ```
+ */
+export const minus = subtract;
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_unary-minus
+ * 
+ * Unary minus. This operator changes the sign of the operand.
+ * 
+ * ```SQL
+ * mysql> SELECT - 2;
+ *         -> -2
+ * ```
+ */
+export function unary_minus(target: Arg<number>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `- ${q.colRef(target, context)}`;
+    }
+  });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_divide
+ * 
+ * ```SQL
+ * mysql> SELECT 3/5;
+ *         -> 0.60
+ * ```
+ * 
+ * Division by zero produces a `NULL` result:
+ * ```SQL
+ * mysql> SELECT 102/(1-1);
+ *         -> NULL
+ * ```
+ * 
+ * A division is calculated with `BIGINT` arithmetic only if performed in a context where its 
+ * result is converted to an integer.
+ */
+export function divide(target: Arg<number>, value: Arg<number>): Col<number>;
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_divide
+ * 
+ * Integer division. Discards from the division result any fractional part to the right of the decimal point.
+ * 
+ * If either operand has a noninteger type, the operands are converted to `DECIMAL` and divided using `DECIMAL` 
+ * arithmetic before converting the result to `BIGINT`. If the result exceeds `BIGINT` range, an error occurs.
+ * 
+ * ```SQL
+ * mysql> SELECT 5 DIV 2, -5 DIV 2, 5 DIV -2, -5 DIV -2;
+ *         -> 2, -2, -2, 2
+ * ```
+ */
+export function divide(target: Arg<number>, value: Arg<number>, args: { integer: true }): Col<number>;
+export function divide(target: Arg<number>, value: Arg<number>, args?: { integer: boolean }) {
+  return _arithmaticOp(target, value, args?.integer ? 'DIV' : '/');
+}
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_times
+ * 
+ * ```SQL
+ * mysql> SELECT 3 * 5;
+ *         -> 15
+ * mysql> SELECT 18014398509481984 * 18014398509481984.0;
+ *         -> 324518553658426726783156020576256.0
+ * mysql> SELECT 18014398509481984 * 18014398509481984;
+ *         --> out-of-range error
+ * ```
+ * 
+ * The last expression produces an error because the result of the integer multiplication exceeds 
+ * the 64-bit range of `BIGINT` calculations. 
+ * [(See Section 11.1, “Numeric Data Types”.)](https://dev.mysql.com/doc/refman/8.0/en/numeric-types.html)
+ */
 export function multiply(target: Arg<number>, value: Arg<number>) {
   return _arithmaticOp(target, value, '*');
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_times
+ * 
+ * ```SQL
+ * mysql> SELECT 3 * 5;
+ *         -> 15
+ * mysql> SELECT 18014398509481984 * 18014398509481984.0;
+ *         -> 324518553658426726783156020576256.0
+ * mysql> SELECT 18014398509481984 * 18014398509481984;
+ *         --> out-of-range error
+ * ```
+ * 
+ * The last expression produces an error because the result of the integer multiplication exceeds 
+ * the 64-bit range of `BIGINT` calculations. 
+ * [(See Section 11.1, “Numeric Data Types”.)](https://dev.mysql.com/doc/refman/8.0/en/numeric-types.html)
+ */
+export const times = multiply;
+
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html#operator_mod
+ * 
+ * ```SQL
+ * mysql> SELECT 234 % 10;
+ *         -> 4
+ * mysql> SELECT 253 % 7;
+ *         -> 1
+ * mysql> SELECT 29 % 9;
+ *         -> 2
+ * mysql> SELECT 29 % 9;
+ *         -> 2
+ * ```
+ * 
+ * Modulo operation. Returns the remainder of `N` divided by `M`. For more information, see the 
+ * description for the `MOD()` function in 
+ * [Section 12.6.2, “Mathematical Functions”](https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html).
+ * 
+ * See also: 
+ * - {@link mod}
+ */
 export function modulo(target: Arg<number>, value: Arg<number>) {
   return _arithmaticOp(target, value, '%');
 }
 
-export function abs(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `ABS(${q.colRef(value, ctx)})` });
+//#endregion
+
+// #region MATHEMATICAL FUNCTIONS
+
+/**
+ * Returns the absolute value of `X`, or `NULL` if `X` is `NULL`.
+ * 
+ * The result type is derived from the argument type. An implication of this is that 
+ * `ABS(-9223372036854775808)` produces an error because the result cannot be stored 
+ * in a signed `BIGINT` value.
+ * 
+ * ```SQL
+ * mysql> SELECT ABS(2);
+ *         -> 2
+ * mysql> SELECT ABS(-32);
+ *         -> 32
+ * ```
+ * 
+ * This function is safe to use with `BIGINT` values.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_abs
+ */
+export function abs(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `ABS(${q.colRef(x, ctx)})` });
 }
 
-export function acos(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `ACOS(${q.colRef(value, ctx)})` });
+/**
+ * Returns the arc cosine of `X`, that is, the value whose cosine is `X`. Returns `NULL` 
+ * if `X` is not in the range `-1` to `1`, or if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT ACOS(1);
+ *         -> 0
+ * mysql> SELECT ACOS(1.0001);
+ *         -> NULL
+ * mysql> SELECT ACOS(0);
+ *         -> 1.5707963267949
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_acos
+ */
+export function acos(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `ACOS(${q.colRef(x, ctx)})` });
 }
 
-export function asin(value: Arg<number>) {
-  return new Col<number>({ defer: (q, ctx) => `ASIN(${q.colRef(value, ctx)})` });
+/**
+ * Returns the arc sine of `X`, that is, the value whose sine is `X`. Returns `NULL` if 
+ * `X` is not in the range `-1` to `1`, or if `X` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT ASIN(0.2);
+ *         -> 0.20135792079033
+ * mysql> SELECT ASIN('foo');
+ *         -> 0 -- Warning (1292): Truncated incorrect DOUBLE value: 'foo'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/mathematical-functions.html#function_asin
+ */
+export function asin(x: Arg<number>) {
+  return new Col<number>({ defer: (q, ctx) => `ASIN(${q.colRef(x, ctx)})` });
 }
 
 export function atan(value: Arg<number>, val2?: Arg<number>) {
@@ -821,7 +1029,7 @@ export function floor(value: Arg<number>) {
   return new Col<number>({ defer: (q, ctx) => `FLOOR(${q.colRef(value, ctx)})` });
 }
 
-//#endregion
+// #endregion
 
 // #region STRING OPERATIONS
 
@@ -2247,50 +2455,256 @@ export function timestamp(value: Arg<string> | Date) {
 
 // #region COMPARISON FUNCTIONS
 
-export function is(target: Arg, value: Arg | null) {
+/**
+ * Refs: 
+ * - https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_is
+ * - https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_is-null
+ * 
+ * Tests a value against a boolean value, where `boolean_value` can be `TRUE`, `FALSE`, or `UNKNOWN`.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 IS TRUE, 0 IS FALSE, NULL IS UNKNOWN;
+ *         -> 1, 1, 1
+ * ```
+ * 
+ * ### Usage
+ * `NULL` and `UNKNOWN` are defined as constants within the mysql-query-builder library. 
+ * JavasScript primitive `null` will be translated to `NULL` but may have unintended outcomes if used
+ * as a return type from another function evaluated at run time. 
+ * 
+ * It is prefferred to explicitly pass `NULL` and `UNKNOWN`.
+ * 
+ * ```typescript
+ * import { is, NULL, UNKNOWN } from 'mysql-query-builder';
+ * 
+ * is(1, NULL); // => Col<boolean> -> 1 IS NULL
+ * is(1, null); // => Col<boolean> -> 1 IS NULL
+ * is(1, UNKNOWN); // => Col<boolean> -> 1 IS UNKNOWN
+ * is(1, true); // => Col<boolean> -> 1 IS TRUE
+ * ```
+ */
+export function is(target: Arg<booleanish>, value: Arg<boolean> | typeof NULL | typeof UNKNOWN | null) {
   return new Col<boolean>({
     defer(q, ctx) {
-      if (value === null)
+      if (NULL.equals(value))
         return `${q.colRef(target, ctx)} IS NULL`;
 
-      else
-        return `${q.colRef(target, ctx)} IS NOT ${q.colRef(value, ctx)}`;
+      if (UNKNOWN.equals(value))
+        return `${q.colRef(target, ctx)} IS UNKNOWN`;
+
+      return `${q.colRef(target, ctx)} IS ${q.colRef(value, ctx)}`;
     },
-  })
-}
-
-export function is_not(target: Arg, value: Arg | null) {
-  return new Col<boolean>({
-    defer(q, ctx) {
-      if (value === null)
-        return `${q.colRef(target, ctx)} IS NOT NULL`;
-
-      else
-        return `${q.colRef(target, ctx)} IS NOT ${q.colRef(value, ctx)}`;
-    }
   });
 }
 
-export function is_null(target: Arg) {
+/**
+ * Refs: 
+ * - https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_is-not
+ * - https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_is-not-null
+ * 
+ * Tests a value against a boolean value, where boolean_value can be `TRUE`, `FALSE`, or `UNKNOWN`.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 IS NOT UNKNOWN, 0 IS NOT UNKNOWN, NULL IS NOT UNKNOWN;
+ *         -> 1, 1, 0
+ * ```
+  * ### Usage
+ * `NULL` and `UNKNOWN` are defined as constants within the mysql-query-builder library. 
+ * JavasScript primitive `null` will be translated to `NULL` but may have unintended outcomes if used
+ * as a return type from another function evaluated at run time. 
+ * 
+ * It is prefferred to explicitly pass `NULL` and `UNKNOWN`.
+ * 
+ * ```typescript
+ * import { is_not, NULL, UNKNOWN } from 'mysql-query-builder';
+ * 
+ * is_not(1, NULL); // => Col<boolean> -> 1 IS NOT NULL
+ * is_not(1, null); // => Col<boolean> -> 1 IS NOT NULL
+ * is_not(1, UNKNOWN); // => Col<boolean> -> 1 IS NOT UNKNOWN
+ * is_not(1, true); // => Col<boolean> -> 1 IS NOT TRUE
+ * ```
+ */
+export function is_not(target: Arg, value: Arg | null) {
   return new Col<boolean>({
-    defer(q, context) {
-      return `IS_NULL(${q.colRef(target, context)})`;
+    defer(q, ctx) {
+      if (NULL.equals(value))
+        return `${q.colRef(target, ctx)} IS NOT NULL`;
+
+      if (UNKNOWN.equals(value))
+        return `${q.colRef(target, ctx)} IS NOT UNKNOWN`;
+
+      return `${q.colRef(target, ctx)} IS ${q.colRef(value, ctx)}`;
     },
-  })
+  });
 }
 
-export function if_null<T>(target: Arg<unknown>, value: Arg<T>) {
-  return operation<T>((q, ctx) => `IFNULL(${q.colRef(target, ctx)}, ${q.colRef(value, ctx)})`);
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#function_isnull
+ * 
+ * If expr is `NULL`, `ISNULL()` returns `1`, otherwise it returns `0`.
+ * 
+ * ```SQL
+ * mysql> SELECT ISNULL(1+1);
+ *         -> 0
+ * mysql> SELECT ISNULL(1/0);
+ *         -> 1
+ * ```
+ * 
+ * `ISNULL()` can be used instead of = to test whether a value is `NULL`. (Comparing a value to 
+ * `NULL` using = always yields `NULL`.)
+ * 
+ * The `ISNULL()` function shares some special behaviors with the IS `NULL` comparison operator. 
+ * See the description of IS `NULL`.
+ * 
+ * See also: 
+ * - {@link is}
+ * - {@link equalTo}
+ */
+export function isnull(target: Arg): Col<boolean> {
+  return new Col({
+    defer(q, context) {
+      return `ISNULL(${q.colRef(target, context)})`;
+    },
+  });
 }
 
-export function and(...args: Col<boolean>[]) {
-  return operation<boolean>((q, ctx) => `(${args.map(op => q.colRef(op, ctx)).join(' AND ')})`);
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/flow-control-functions.html#function_ifnull
+ * 
+ * If `expr1` is not `NULL`, `IFNULL()` returns `expr1`; otherwise it returns `expr2`.
+ * 
+ * ```SQL
+ * mysql> SELECT IFNULL(1, 0);
+ *         -> 1
+ * mysql> SELECT IFNULL(NULL, 10);
+ *         -> 10
+ * mysql> SELECT IFNULL(1 / 0, 10);
+ *         -> 10
+ * mysql> SELECT IFNULL(1 / 0, 'yes');
+ *         -> 'yes'
+ * ```
+ * 
+ * The default return type of `IFNULL(expr1,expr2)` is the more “general” of the two expressions, 
+ * in the order `STRING`, `REAL`, or `INTEGER`. Consider the case of a table based on expressions 
+ * or where MySQL must internally store a value returned by `IFNULL()` in a temporary table:
+ * 
+ * ```SQL
+ * mysql> CREATE TABLE tmp SELECT IFNULL(1,'test') AS test;
+ * mysql> DESCRIBE tmp;
+ * ```
+ * ```text
+ * +-------+--------------+------+-----+---------+-------+
+ * | Field | Type         | Null | Key | Default | Extra |
+ * +-------+--------------+------+-----+---------+-------+
+ * | test  | varbinary(4) | NO   |     |         |       |
+ * +-------+--------------+------+-----+---------+-------+
+ * ```
+ * 
+ * In this example, the type of the test column is `VARBINARY(4)` (a string type).
+ * 
+ */
+export function ifnull<T, U>(expr1: Arg<T>, expr2: Arg<U>): Col<T | U> {
+  return new Col({
+    defer(q, context) {
+      return `IFNULL(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
+    },
+  });
 }
 
-export function or(...args: Col<boolean>[]) {
-  return operation<boolean>((q, ctx) => `(${args.map(op => q.colRef(op, ctx)).join(' OR ')})`);
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/logical-operators.html#operator_and
+ * 
+ * Logical `AND`. Evaluates to `1` if all operands are nonzero and not `NULL`, to `0` if one or more 
+ * operands are `0`, otherwise `NULL` is returned.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 AND 1;
+ *         -> 1
+ * mysql> SELECT 1 AND 0;
+ *         -> 0
+ * mysql> SELECT 1 AND NULL;
+ *         -> NULL
+ * mysql> SELECT 0 AND NULL;
+ *         -> 0
+ * mysql> SELECT NULL AND 0;
+ *         -> 0
+ * ```
+ * 
+ * The `&&` operator is a nonstandard MySQL extension. As of MySQL 8.0.17, this operator is deprecated; 
+ * expect support for it to be removed in a future version of MySQL. Applications should be adjusted 
+ * to use the standard SQL `AND` operator.
+ */
+export function and(...args: Col<boolean>[]): Col<boolean> {
+  return new Col({
+    defer(q, context) {
+      return `(${args.reduce((out, arg) => {
+        const str = q.colRef(arg, context);
+        return out ? `${out} AND ${str}` : str;
+      }, '')})`
+    },
+  });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/logical-operators.html#operator_or
+ * 
+ * Logical `OR`. When both operands are non-`NULL`, the result is `1` if any operand is nonzero, 
+ * and `0` otherwise. With a `NULL` operand, the result is `1` if the other operand is nonzero, 
+ * and `NULL` otherwise. If both operands are `NULL`, the result is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 OR 1;
+ *         -> 1
+ * mysql> SELECT 1 OR 0;
+ *         -> 1
+ * mysql> SELECT 0 OR 0;
+ *         -> 0
+ * mysql> SELECT 0 OR NULL;
+ *         -> NULL
+ * mysql> SELECT 1 OR NULL;
+ *         -> 1
+ * ```
+ * 
+ * ### Note
+ * > If the 
+ * > [`PIPES_AS_CONCAT`](https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_pipes_as_concat) 
+ * > SQL mode is enabled, `||` signifies the SQL-standard string concatenation operator (like `CONCAT()`).
+ * 
+ * The `||` operator is a nonstandard MySQL extension. As of MySQL 8.0.17, this operator is deprecated; 
+ * expect support for it to be removed in a future version of MySQL. Applications should be adjusted 
+ * to use the standard SQL `OR` operator. Exception: Deprecation does not apply if `PIPES_AS_CONCAT` 
+ * is enabled because, in that case, `||` signifies string concatenation.
+ */
+export function or(...args: Col<boolean>[]): Col<boolean> {
+  return new Col({
+    defer(q, context) {
+      return `(${args.reduce((out, arg) => {
+        const str = q.colRef(arg, context);
+        return out ? `${out} OR ${str}` : str;
+      }, '')})`
+    },
+  });
+}
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/logical-operators.html#operator_xor
+ * 
+ * Logical `XOR`. Returns `NULL` if either operand is `NULL`. For non-`NULL` operands, evaluates 
+ * to `1` if an odd number of operands is nonzero, otherwise `0` is returned.
+ * 
+ * ```SQL
+ * mysql> SELECT 1 XOR 1;
+ *         -> 0
+ * mysql> SELECT 1 XOR 0;
+ *         -> 1
+ * mysql> SELECT 1 XOR NULL;
+ *         -> NULL
+ * mysql> SELECT 1 XOR 1 XOR 1;
+ *         -> 1
+ * ```
+ * 
+ * `a XOR b` is mathematically equal to `(a AND (NOT b)) OR ((NOT a) and b)`.
+ */
 export function xor(...args: Col<boolean>[]) {
   return new Col<boolean>({
     defer(q, context) {
@@ -2302,6 +2716,33 @@ export function xor(...args: Col<boolean>[]) {
   })
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_between
+ * 
+ * If `expr` is greater than or equal to min and `expr` is less than or equal to max, `BETWEEN` returns `1`, 
+ * otherwise it returns `0`. This is equivalent to the expression `(min <= expr AND expr <= max)` if all 
+ * the arguments are of the same type. Otherwise type conversion takes place according to the rules described in 
+ * [Section 12.3, “Type Conversion in Expression Evaluation”](https://dev.mysql.com/doc/refman/8.0/en/type-conversion.html), 
+ * but applied to all the three arguments.
+ * 
+ * ```SQL
+ * mysql> SELECT 2 BETWEEN 1 AND 3, 2 BETWEEN 3 and 1;
+ *         -> 1, 0
+ * mysql> SELECT 1 BETWEEN 2 AND 3;
+ *         -> 0
+ * mysql> SELECT 'b' BETWEEN 'a' AND 'c';
+ *         -> 1
+ * mysql> SELECT 2 BETWEEN 2 AND '3';
+ *         -> 1
+ * mysql> SELECT 2 BETWEEN 2 AND 'x-3';
+ *         -> 0
+ * ```
+ * 
+ * For best results when using `BETWEEN` with date or time values, use `CAST()` to explicitly convert the values 
+ * to the desired data type. Examples: If you compare a `DATETIME` to two `DATE` values, convert the `DATE` values to 
+ * `DATETIME` values. If you use a string constant such as `'2001-1-1'` in a comparison to a `DATE`, cast the 
+ * string to a `DATE`.
+ */
 export function between<T>(target: Arg<T>, start: Arg<T>, end: Arg<T>) {
   return new Col<boolean>({
     defer(q, context) {
@@ -2310,14 +2751,36 @@ export function between<T>(target: Arg<T>, start: Arg<T>, end: Arg<T>) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_not-between
+ * 
+ * This is the same as `NOT (expr BETWEEN min AND max)`.
+ * 
+ * See also: 
+ * - {@link between}
+ */
 export function not_between<T>(target: Arg<T>, start: Arg<T>, end: Arg<T>) {
   return new Col<boolean>({
     defer(q, context) {
-      return `NOT (${q.colRef(target, context)} BETWEEN ${q.colRef(start, context)} AND ${q.colRef(end, context)})`;
+      return `${q.colRef(target, context)} NOT BETWEEN ${q.colRef(start, context)} AND ${q.colRef(end, context)}`;
     }
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#function_coalesce
+ * 
+ * Returns the first non-`NULL` value in the list, or `NULL` if there are no non-`NULL` values.
+ * 
+ * The return type of `COALESCE()` is the aggregated type of the argument types.
+ * 
+ * ```SQL
+ * mysql> SELECT COALESCE(NULL,1);
+ *         -> 1
+ * mysql> SELECT COALESCE(NULL,NULL,NULL);
+ *         -> NULL
+ * ```
+ */
 export function coalesce(...args: Arg<any>[]) {
   return new Col<any>({
     defer(q, context) {
@@ -2329,6 +2792,24 @@ export function coalesce(...args: Arg<any>[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#function_greatest
+ * 
+ * With two or more arguments, returns the largest (maximum-valued) argument. The arguments 
+ * are compared using the same rules as for `LEAST()`.
+ * 
+ * ```SQL
+ * mysql> SELECT GREATEST(2,0);
+ *         -> 2
+ * mysql> SELECT GREATEST(34.0,3.0,5.0,767.0);
+ *         -> 767.0
+ * mysql> SELECT GREATEST('B','A','C');
+ *         -> 'C'
+ * ```
+ * 
+ * See also: 
+ * - {@link least}
+ */
 export function greatest<T extends string | number>(...args: Arg<T>[]) {
   return new Col<T>({
     defer(q, context) {
@@ -2340,6 +2821,33 @@ export function greatest<T extends string | number>(...args: Arg<T>[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#function_least
+ * 
+ * With two or more arguments, returns the smallest (minimum-valued) argument. The arguments are 
+ * compared using the following rules:
+ * - If any argument is `NULL`, the result is `NULL`. No comparison is needed.
+ * - If all arguments are integer-valued, they are compared as integers.
+ * - If at least one argument is double precision, they are compared as double-precision values. 
+ * Otherwise, if at least one argument is a `DECIMAL` value, they are compared as `DECIMAL` values.
+ * - If the arguments comprise a mix of numbers and strings, they are compared as strings.
+ * - If any argument is a nonbinary (character) string, the arguments are compared as nonbinary strings.
+ * - In all other cases, the arguments are compared as binary strings.
+ * 
+ * The return type of `LEAST()` is the aggregated type of the comparison argument types
+ * 
+ * ```SQL
+ * mysql> SELECT LEAST(2, 0);
+ *         -> 0
+ * mysql> SELECT LEAST(34.0, 3.0, 5.0, 767.0);
+ *         -> 3.0
+ * mysql> SELECT LEAST('B', 'A', 'C');
+ *         -> 'A'
+ * ```
+ * 
+ * See also: 
+ * - {@link greatest}
+ */
 export function least<T extends string | number>(...args: Arg<T>[]) {
   return new Col<T>({
     defer(q, context) {
@@ -2351,6 +2859,58 @@ export function least<T extends string | number>(...args: Arg<T>[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_in
+ * 
+ * Returns `1` (true) if `expr` is equal to any of the values in the `IN()` list, else returns `0` (false).
+ * 
+ * ```SQL
+ * mysql> SELECT 2 IN (0,3,5,7);
+ *         -> 0
+ * mysql> SELECT 'wefwf' IN ('wee','wefwf','weg');
+ *         -> 1
+ * ```
+ * 
+ * Type conversion takes place according to the rules described in 
+ * [Section 12.3, “Type Conversion in Expression Evaluation”](https://dev.mysql.com/doc/refman/8.0/en/type-conversion.html),
+ * applied to all the arguments. If no type conversion is needed for the values in the `IN()` list, 
+ * they are all non-JSON constants of the same type, and `expr` can be compared to each of them as 
+ * a value of the same type (possibly after type conversion), an optimization takes place. 
+ * The values the list are sorted and the search for `expr` is done using a binary search, which 
+ * makes the `IN()` operation very quick.
+ * 
+ * IN() can be used to compare row constructors:
+ * 
+ * ```SQL
+ * mysql> SELECT (3,4) IN ((1,2), (3,4));
+ *         -> 1
+ * mysql> SELECT (3,4) IN ((1,2), (3,5));
+ *         -> 0
+ * ```
+ * 
+ * You should never mix quoted and unquoted values in an IN() list because the comparison rules for quoted 
+ * values (such as strings) and unquoted values (such as numbers) differ. Mixing types may therefore 
+ * lead to inconsistent results. 
+ * 
+ * **For example**
+ * ```SQL
+ * SELECT val1 FROM tbl1 WHERE val1 IN (1, 2, 'a'); -- BAD
+ * SELECT val1 FROM tbl1 WHERE val1 IN ('1', '2', 'a'); -- GOOD
+ * ```
+ * 
+ * The number of values in the `IN()` list is only limited by the 
+ * [max_allowed_packet](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet) 
+ * value.
+ * 
+ * To comply with the SQL standard, `IN()` returns `NULL` not only if the expression on the left hand side is `NULL`, 
+ * but also if no match is found in the list and one of the expressions in the list is `NULL`.
+ * 
+ * `IN()` syntax can also be used to write certain types of subqueries. See 
+ * [Section 13.2.15.3, “Subqueries with ANY, IN, or SOME”](https://dev.mysql.com/doc/refman/8.0/en/any-in-some-subqueries.html).
+ * 
+ * See also: 
+ * - {@link not_in}
+ */
 export function iin<T>(target: Arg<T>, values: Arg<T>[]) {
   return new Col<T>({
     defer(q, context) {
@@ -2362,6 +2922,21 @@ export function iin<T>(target: Arg<T>, values: Arg<T>[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#operator_not-in
+ * 
+ * This is the same as `NOT (expr IN (value,...))`.
+ * 
+ * ```SQL
+ * mysql> SELECT 2 NOT IN (0,3,5,7);
+ *         -> 1
+ * mysql> SELECT 'wefwf' NOT IN ('wee','wefwf','weg');
+ *         -> 0
+ * ```
+ * 
+ * See also: 
+ * - {@link iin}
+ */
 export function not_in<T>(target: Arg<T>, values: Arg<T>[]) {
   return new Col<T>({
     defer(q, context) {
@@ -2373,6 +2948,22 @@ export function not_in<T>(target: Arg<T>, values: Arg<T>[]) {
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/comparison-operators.html#function_interval
+ * 
+ * Returns `0` if `N < N1`, `1` if `N < N2` and so on or `-1` if `N` is `NULL`. All arguments are 
+ * treated as integers. It is required that `N1 < N2 < N3 < ... < Nn` for this function to work correctly. 
+ * This is because a binary search is used (very fast).
+ * 
+ * ```SQL
+ * mysql> SELECT INTERVAL(23, 1, 15, 17, 30, 44, 200);
+ *         -> 3
+ * mysql> SELECT INTERVAL(10, 1, 10, 100, 1000);
+ *         -> 2
+ * mysql> SELECT INTERVAL(22, 23, 30, 44, 200);
+ *         -> 0
+ * ```
+ */
 export function interval(...values: Arg<number>[]) {
   return new Col<number>({
     defer(q, context) {
@@ -2512,15 +3103,160 @@ export function not_like(expr: Arg, pattern: Arg<string>, args?: { escape: Arg<s
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/string-comparison-functions.html#function_strcmp
+ * 
+ * `STRCMP()` returns `0` if the strings are the same, `-1` if the first argument is smaller than 
+ * the second according to the current sort order, and `NULL` if either argument is `NULL`. 
+ * It returns `1` otherwise.
+ * 
+ * ```SQL
+ * mysql> SELECT STRCMP('text', 'text2');
+ *         -> -1
+ * mysql> SELECT STRCMP('text2', 'text');
+ *         -> 1
+ * mysql> SELECT STRCMP('text', 'text');
+ *         -> 0
+ * ```
+ * 
+ * `STRCMP()` performs the comparison using the collation of the arguments.
+ * 
+ * ```SQL
+ * mysql> SET @s1 = _utf8mb4 'x' COLLATE utf8mb4_0900_ai_ci;
+ * mysql> SET @s2 = _utf8mb4 'X' COLLATE utf8mb4_0900_ai_ci;
+ * mysql> SET @s3 = _utf8mb4 'x' COLLATE utf8mb4_0900_as_cs;
+ * mysql> SET @s4 = _utf8mb4 'X' COLLATE utf8mb4_0900_as_cs;
+ * mysql> SELECT STRCMP(@s1, @s2), STRCMP(@s3, @s4);
+ *        -> 0, 1
+ * ```
+ * 
+ * If the collations are incompatible, one of the arguments must be converted to be compatible with 
+ * the other. See 
+ * [Section 10.8.4, “Collation Coercibility in Expressions”](https://dev.mysql.com/doc/refman/8.0/en/charset-collation-coercibility.html).
+ * 
+ * ```SQL
+ * mysql> SET @s1 = _utf8mb4 'x' COLLATE utf8mb4_0900_ai_ci;
+ * mysql> SET @s2 = _utf8mb4 'X' COLLATE utf8mb4_0900_ai_ci;
+ * mysql> SET @s3 = _utf8mb4 'x' COLLATE utf8mb4_0900_as_cs;
+ * mysql> SET @s4 = _utf8mb4 'X' COLLATE utf8mb4_0900_as_cs;
+ * 
+ * mysql> SELECT STRCMP(@s1, @s3);
+ *        -- ERROR 1267 (HY000): Illegal mix of collations (utf8mb4_0900_ai_ci,IMPLICIT) and (utf8mb4_0900_as_cs,IMPLICIT) for operation 'strcmp'
+ * 
+ * mysql> SELECT STRCMP(@s1, @s3 COLLATE utf8mb4_0900_ai_ci);
+ *        -> 0
+ * ```
+ */
+export function strcmp(expr1: Arg<string>, expr2: Arg<string>): Col<boolean> {
+  return new Col({
+    defer(q, context) {
+      return `STRCMP(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
+    }
+  });
+}
+
 // #endregion
 
 // #region FLOW CONTROL FUNCTIONS
 
-export type CaseArg<T, U> = { when: Arg<T>; then: Arg<U>; else?: Arg<U>; }
-export function ccase<T, U>(target: Arg<T>, ...args: CaseArg<T, U>[]) {
-  return new Col<U>({
+export type CaseArg<T = any, U = any> = { when: Arg<T>; then: Arg<U>; else?: Arg<U>; }
+
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/flow-control-functions.html#operator_case
+ * 
+ * The first `CASE` syntax returns the `result` for the first `value=compare_value` comparison 
+ * that is true. The second syntax returns the result for the first condition that is true. 
+ * If no comparison or condition is true, the result after `ELSE` is returned, or `NULL` if 
+ * there is no `ELSE` part.
+ * 
+ * ```SQL
+ * mysql> SELECT CASE 1 
+ *          WHEN 1 THEN 'one'
+ *          WHEN 2 THEN 'two' 
+ *          ELSE 'more' 
+ *          END;
+ *         -> 'one'
+ * mysql> SELECT CASE WHEN 1 > 0 THEN 'true' ELSE 'false' END;
+ *         -> 'true'
+ * mysql> SELECT CASE BINARY 'B' WHEN 'a' THEN 1 WHEN 'b' THEN 2 END;
+ *         -> NULL
+ * ```
+ * 
+ * ### Usage
+ * 
+ * ```typescript
+ * import { ccase, greaterThan } from 'mysql-query-builder';
+ * 
+ * ccase(1, { when: 1, then: 'one' }, { when: 2, then: 'two', else: 'more' }); // => Col<string> -> CASE 1 WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'more' END
+ * 
+ * ccase({ when: greaterThan(1, 0), then: 'true', else: 'false' }) // => Col<string> -> CASE WHEN 1 > 0 THEN 'true' ELSE 'false' END
+ * ```
+ * 
+ * ### Remarks
+ * 
+ * The return type of a CASE expression result is the aggregated type of all result values:
+ * - If all types are numeric, the aggregated type is also numeric:
+ *     - If at least one argument is double precision, the result is double precision.
+ *     - Otherwise, if at least one argument is `DECIMAL`, the result is `DECIMAL`.
+ *     - Otherwise, the result is an integer type (with one exception):
+ *         - If all integer types are all signed or all unsigned, the result is the 
+ *           same sign and the precision is the highest of all specified integer types 
+ *           (that is, `TINYINT`, `SMALLINT`, `MEDIUMINT`, `INT`, or `BIGINT`).
+ *         - If there is a combination of signed and unsigned integer types, the result 
+ *           is signed and the precision may be higher. For example, if the types are 
+ *           signed `INT` and unsigned `INT`, the result is signed `BIGINT`.
+ *         - The exception is unsigned `BIGINT` combined with any signed integer type. 
+ *           The result is `DECIMAL` with sufficient precision and scale `0`.
+ * - If all types are `BIT`, the result is `BIT`. Otherwise, `BIT` arguments are treated similar 
+ *   to `BIGINT`.
+ * - If all types are `YEAR`, the result is `YEAR`. Otherwise, `YEAR` arguments are treated 
+ *   similar to `INT`.
+ * - If all types are character string (`CHAR` or `VARCHAR`), the result is `VARCHAR` with maximum 
+ *   length determined by the longest character length of the operands.
+ * - If all types are character or binary string, the result is `VARBINARY`.
+ * - `SET` and `ENUM` are treated similar to `VARCHAR`; the result is `VARCHAR`.
+ * - If all types are `JSON`, the result is `JSON`.
+ * - If all types are temporal, the result is temporal:
+ *     - If all temporal types are `DATE`, `TIME`, or `TIMESTAMP`, the result is `DATE`, `TIME`, or 
+ *       `TIMESTAMP`, respectively.
+ *     - Otherwise, for a mix of temporal types, the result is `DATETIME`.
+ * - If all types are `GEOMETRY`, the result is `GEOMETRY`.
+ * - If any type is `BLOB`, the result is `BLOB`.
+ * - For all other type combinations, the result is `VARCHAR`.
+ * - Literal `NULL` operands are ignored for type aggregation.
+ * 
+ * ### Notes
+ * > The syntax of the `CASE` operator described here differs slightly from that of the SQL `CASE` statement 
+ * > described in 
+ * > [Section 13.6.5.1, “CASE Statement”](https://dev.mysql.com/doc/refman/8.0/en/case.html), 
+ * > for use inside stored programs. The `CASE` statement cannot have an `ELSE NULL` clause, and it is 
+ * > terminated with `END CASE` instead of `END`.
+ */
+export function ccase<T, U>(target: Arg<T>, ...args: CaseArg<T, U>[]): Col<U>;
+export function ccase<T, U>(...args: CaseArg<T, U>[]): Col<U>;
+export function ccase<T, U>(...args: any[]): Col<U> {
+
+  const target: Arg<T> | undefined = (() => {
+    for (const key in args[0])
+      switch (key as keyof CaseArg) {
+        case 'else':
+        case 'then':
+        case 'when':
+          return undefined;
+      }
+
+    return args[0];
+  })();
+
+  const arg_index = target === undefined ? 0 : 1;
+
+  return new Col({
     defer(q, context) {
-      const when_thens = args.reduce((out, arg) => {
+
+      let when_thens = '';
+
+      for (let i = arg_index; i < args.length; i++) {
+        const arg = args[i];
 
         const when = q.colRef(arg.when, context);
         const then = q.colRef(arg.then, context);
@@ -2530,13 +3266,32 @@ export function ccase<T, U>(target: Arg<T>, ...args: CaseArg<T, U>[]) {
         if (arg.else)
           str += ` ELSE ${q.colRef(arg.else, context)}`;
 
-        return out ? `\r\n${str}` : str;
-      }, '');
-      return `CASE ${q.colRef(target, context)} ${when_thens} END`;
+        when_thens += when_thens ? `\r\n${str}` : str;
+      }
+
+      if (target === undefined)
+        return `CASE ${when_thens} END`;
+
+      else
+        return `CASE ${q.colRef(target, context)} ${when_thens} END`;
     }
   });
 }
 
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/flow-control-functions.html#function_if
+ * 
+ * If `expr1` is `TRUE` (`expr1` <> 0 and `expr1` `IS NOT NULL`), `IF()` returns `expr2`. Otherwise, it returns `expr3`.
+ * 
+ * ```SQL
+ * mysql> SELECT IF(1 > 2, 2, 3);
+ *         -> 3
+ * mysql> SELECT IF(1 < 2, 'yes', 'no');
+ *         -> 'yes'
+ * mysql> SELECT IF(STRCMP('test', 'test1'), 'no', 'yes');
+ *         -> 'no'
+ * ```
+ */
 export function iif<T, U>(target: Arg<boolean>, then: Arg<T>, _else: Arg<U>) {
   return new Col<T | U>({
     defer(q, context) {
@@ -2545,7 +3300,25 @@ export function iif<T, U>(target: Arg<boolean>, then: Arg<T>, _else: Arg<U>) {
   });
 }
 
-export function null_if<T>(expr1: Arg<T>, expr2: Arg<T>) {
+/**
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/flow-control-functions.html#function_nullif
+ * 
+ * Returns `NULL` if `expr1 = expr2` is true, otherwise returns `expr1`. This is the same as 
+ * `CASE WHEN expr1 = expr2 THEN NULL ELSE expr1 END`.
+ * 
+ * The return value has the same type as the first argument.
+ * 
+ * ```SQL
+ * mysql> SELECT NULLIF(1,1);
+ *         -> NULL
+ * mysql> SELECT NULLIF(1,2);
+ *         -> 1
+ * ```
+ * 
+ * **Note:** 
+ * MySQL evaluates `expr1` twice if the arguments are not equal.
+ */
+export function nullif<T>(expr1: Arg<T>, expr2: Arg<T>) {
   return new Col<T | null>({
     defer(q, context) {
       return `NULLIF(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
