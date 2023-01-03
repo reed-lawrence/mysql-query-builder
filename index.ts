@@ -30,6 +30,262 @@ export type SelectResult<T> = (QColMapToNative<GetInnerType<T>> & Omit<RowDataPa
 type Arg<T = unknown> = Col<T> | T;
 
 export type booleanish = boolean | 0 | 1;
+export type date = string | Date;
+export type datetime = string;
+export type time_stamp = string;
+export type time = string;
+
+export type temporal = date | datetime | time_stamp;
+
+const TEMPORAL_INTERVALS_NUMERIC = [
+  'microsecond',
+  'second',
+  'minute',
+  'hour',
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year'
+] as const;
+
+type TemporalIntervalsNumeric = typeof TEMPORAL_INTERVALS_NUMERIC[number] | `${typeof TEMPORAL_INTERVALS_NUMERIC[number]}s`;
+
+type TemporalIntervalsNumericValues =
+  { microseconds: number } |
+  { second: number } |
+  { seconds: number } |
+  { hour: number } |
+  { hours: number } |
+  { day: number } |
+  { days: number } |
+  { hour: number } |
+  { hours: number } |
+  { day: number } |
+  { days: number } |
+  { month: number } |
+  { months: number } |
+  { quarter: number } |
+  { quarters: number } |
+  { year: number } |
+  { years: number }
+
+const TEMPORAL_INTERVALS_STRING = [
+  'second_microsecond',
+  'minute_microsecond',
+  'minute_second',
+  'hour_microsecond',
+  'hour_second',
+  'hour_minute',
+  'day_microsecond',
+  'day_second',
+  'day_minute',
+  'day_hour',
+  'year_month'
+] as const;
+
+type TemporalIntervalsString = typeof TEMPORAL_INTERVALS_STRING[number] | `${typeof TEMPORAL_INTERVALS_STRING[number]}s`;
+type TemporalIntervalsStringValues = {
+  /**
+  * Format: 
+  * ```typescript 
+  * 'SECONDS.MICROSECONDS'
+  * ```
+  */
+  second_microsecond: string;
+} | {
+  /**
+   * Format: 
+   * ```typescript 
+   * 'SECONDS.MICROSECONDS'
+   * ```
+   */
+  second_microseconds: string;
+} | {
+  /**
+   * Format: 
+   * ```typescript 
+   * 'MINUTES:SECONDS.MICROSECONDS'
+   * ```
+   */
+  minute_microsecond: string;
+} | {
+  /**
+   * Format: 
+   * ```typescript 
+   * 'MINUTES:SECONDS.MICROSECONDS'
+   * ```
+   */
+  minute_microseconds: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'MINUTES:SECONDS'
+     * ```
+     */
+  minute_second: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'MINUTES:SECONDS'
+     * ```
+     */
+  minute_seconds: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'HOURS:MINUTES:SECONDS.MICROSECONDS'
+     * ```
+     */
+  hour_microsecond: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'HOURS:MINUTES:SECONDS.MICROSECONDS'
+     * ```
+     */
+  hour_microseconds: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'HOURS:MINUTES:SECONDS'
+     * ```
+     */
+  hour_second: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'HOURS:MINUTES:SECONDS'
+     * ```
+     */
+  hour_seconds: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'HOURS:MINUTES'
+     * ```
+     */
+  hour_minute: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'HOURS:MINUTES'
+     * ```
+     */
+  hour_minutes: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS:MINUTES:SECONDS.MICROSECONDS'
+     * ```
+     */
+  day_microsecond: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS:MINUTES:SECONDS.MICROSECONDS'
+     * ```
+     */
+  day_microseconds: string;
+} | {
+  /**
+   * Format: 
+   * ```typescript 
+   * 'DAYS HOURS:MINUTES:SECONDS'
+   * ```
+   */
+  day_second: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS:MINUTES:SECONDS'
+     * ```
+     */
+  day_seconds: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS:MINUTES'
+     * ```
+     */
+  day_minute: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS:MINUTES'
+     * ```
+     */
+  day_minutes: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS'
+     * ```
+     */
+  day_hour: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'DAYS HOURS'
+     * ```
+     */
+  day_hours: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'YEARS-MONTHS'
+     * ```
+     */
+  year_month: string;
+} | {
+  /**
+     * Format: 
+     * ```typescript 
+     * 'YEARS-MONTHS'
+     * ```
+     */
+  year_months: string;
+}
+
+const TEMPORAL_INTERVALS = [
+  ...TEMPORAL_INTERVALS_NUMERIC,
+  ...TEMPORAL_INTERVALS_STRING
+] as const;
+
+type TemporalInterval = TemporalIntervalsNumeric | TemporalIntervalsString;
+type TemporalIntervalObject = TemporalIntervalsNumericValues | TemporalIntervalsStringValues;
+type ArgMap<T> = { [Key in keyof T]: Arg<T[Key]> }
+
+const TEMPORAL_INTERVAL_MAP = TEMPORAL_INTERVALS.reduce((map, str) => {
+
+  // day -> DAY
+  const interval = str.toUpperCase();
+
+  // day = DAY
+  map.set(str, interval);
+
+  // days = DAY
+  map.set(`${str}s`, interval);
+
+  return map;
+
+}, new Map<string, string>());
 
 export class Table<T> {
   public model: T;
@@ -203,9 +459,11 @@ export class Query {
     return table.alias;
   }
 
-  toCol<T>(obj: Arg<T>) {
+  toCol<T extends any>(obj: Arg<T>) {
     if (obj instanceof Col)
       return obj;
+    else if (obj instanceof Date)
+      return new Col<string>({ path: obj.toISOString() });
     else if (obj === true)
       return new Col<boolean>({ path: 'TRUE' });
     else if (obj === false)
@@ -2911,15 +3169,681 @@ export function upper(str: Arg<string>) {
 
 //#region Date Operations
 
-export function timestamp(value: Arg<string> | Date) {
-  return operation<string>((q, ctx) => {
+/**
+ * When invoked with the `INTERVAL` form of the second argument, `ADDDATE()` is a synonym for `DATE_ADD()`. 
+ * The related function `SUBDATE()` is a synonym for `DATE_SUB()`. For information on the `INTERVAL` unit 
+ * argument, see 
+ * [Temporal Intervals](https://dev.mysql.com/doc/refman/8.0/en/expressions.html#temporal-intervals).
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_ADD('2008-01-02', INTERVAL 31 DAY);
+ *         -> '2008-02-02'
+ * mysql> SELECT ADDDATE('2008-01-02', INTERVAL 31 DAY);
+ *         -> '2008-02-02'
+ * ```
+ * 
+ * When invoked with the days form of the second argument, MySQL treats it as an integer number of days to be added to expr.
+ * 
+ * ```SQL
+ * mysql> SELECT ADDDATE('2008-01-02', 31);
+ *         -> '2008-02-02'
+ * ```
+ * 
+ * This function returns `NULL` if `date` or `days` is `NULL`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_adddate
+ */
+export function adddate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<date> {
+  if (typeof arg === 'number' || arg instanceof Col)
+    return new Col<date>({
+      defer(q, context) {
+        return `ADDDATE(${q.colRef(date, context)}, ${q.colRef(arg, context)})`;
+      }
+    });
 
-    if (value instanceof Date)
-      return `TIMESTAMP(${q.paramaterize(value.toISOString())})`;
+  else
+    return new Col<date>({
+      defer(q, context) {
+        return Object.entries(arg).reduceRight((out, [key, value]) => {
 
-    else
-      return `TIMESTAMP(${q.colRef(value, ctx)})`;
+          const interval = TEMPORAL_INTERVAL_MAP.get(key) ?? (() => { throw new Error(`Key ${key} is does not match any TemporalIntervalObject key`) })();
 
+          return `ADDDATE(${out}, INTERVAL ${q.colRef(value, context)} ${interval})`;
+
+        }, q.colRef(date, context));
+      }
+    });
+}
+
+/**
+ * These functions perform date arithmetic. The `date` argument specifies the starting `date` or `datetime` value. 
+ * `expr` is an expression specifying the interval value to be added or subtracted from the starting `date`. `expr` 
+ * is evaluated as a `string`; it may start with a `-` for negative intervals. `unit` is a keyword indicating the 
+ * units in which the expression should be interpreted.
+ * 
+ * For more information about temporal interval syntax, including a full list of unit specifiers, the expected form 
+ * of the `expr` argument for each unit value, and rules for operand interpretation in temporal arithmetic, see 
+ * [Temporal Intervals](https://dev.mysql.com/doc/refman/8.0/en/expressions.html#temporal-intervals).
+ * 
+ * #### Usage
+ * ```typescript
+ * date_add('2023-01-01', { days: 10 }); // => Col<date> -> DATE_ADD('2023-01-01', INTERVAL 10 DAY);
+ * 
+ * date_add('2023-01-01', { months: 3, year: 1 }); // => Col<date> -> DATE_ADD(DATE_ADD('2023-01-01', INTERVAL 3 MONTH), INTERVAL 1 YEAR);
+ * 
+ * ```
+ * 
+ * The return value depends on the arguments:
+ * - If date is `NULL`, the function returns `NULL`.
+ * - `DATE` if the date argument is a `DATE` value and your calculations involve only `YEAR`, `MONTH`, and `DAY` 
+ *   parts (that is, no time parts).
+ * - (MySQL 8.0.28 and later:) `TIME` if the date argument is a `TIME` value and the calculations involve only `HOURS`,
+ *   `MINUTES`, and `SECONDS` parts (that is, no date parts).
+ * - `DATETIME` if the first argument is a `DATETIME` (or `TIMESTAMP`) value, or if the first argument is a `DATE` 
+ *   and the unit value uses `HOURS`, `MINUTES`, or `SECONDS`, or if the first argument is of type `TIME` and the 
+ *   unit value uses `YEAR`, `MONTH`, or `DAY`.
+ * - (MySQL 8.0.28 and later:) If the first argument is a dynamic parameter (for example, of a prepared statement), 
+ *   its resolved type is `DATE` if the second argument is an interval that contains some combination of `YEAR`, `MONTH`, 
+ *   or `DAY` values only; otherwise, its type is `DATETIME`.
+ * - String otherwise (type `VARCHAR`).
+ * 
+ * > #### Note
+ * > In MySQL 8.0.22 through 8.0.27, when used in prepared statements, these functions returned `DATETIME` 
+ * > values regardless of argument types. (Bug #103781)
+ * 
+ * To ensure that the result is `DATETIME`, you can use `CAST()` to convert the first argument to `DATETIME`.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_ADD('2018-05-01',INTERVAL 1 DAY);
+ *         -> '2018-05-02'
+ * mysql> SELECT DATE_SUB('2018-05-01',INTERVAL 1 YEAR);
+ *         -> '2017-05-01'
+ * mysql> SELECT DATE_ADD('2020-12-31 23:59:59', INTERVAL 1 SECOND);
+ *         -> '2021-01-01 00:00:00'
+ * mysql> SELECT DATE_ADD('2018-12-31 23:59:59', INTERVAL 1 DAY);
+ *         -> '2019-01-01 23:59:59'
+ * mysql> SELECT DATE_ADD('2100-12-31 23:59:59', INTERVAL '1:1' MINUTE_SECOND);
+ *         -> '2101-01-01 00:01:00'
+ * mysql> SELECT DATE_SUB('2025-01-01 00:00:00', INTERVAL '1 1:1:1' DAY_SECOND);
+ *         -> '2024-12-30 22:58:59'
+ * mysql> SELECT DATE_ADD('1900-01-01 00:00:00', INTERVAL '-1 10' DAY_HOUR);
+ *         -> '1899-12-30 14:00:00'
+ * mysql> SELECT DATE_SUB('1998-01-02', INTERVAL 31 DAY);
+ *         -> '1997-12-02'
+ * mysql> SELECT DATE_ADD('1992-12-31 23:59:59.000002', INTERVAL '1.999999' SECOND_MICROSECOND);
+ *         -> '1993-01-01 00:00:01.000001'
+ * ```
+ * 
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-add
+ * 
+ * See also:
+ * - {@link cast}
+ * - {@link date_sub}
+ * - {@link TemporalInterval}
+ * - {@link TEMPORAL_INTERVALS}
+ */
+export function date_add(date: Arg<date>, arg: ArgMap<TemporalIntervalObject>): Col<date> {
+  return new Col<date>({
+    defer(q, context) {
+      return Object.entries(arg).reduceRight((out, [key, value]) => {
+
+        const interval = TEMPORAL_INTERVAL_MAP.get(key) ?? (() => { throw new Error(`Key ${key} is does not match any TemporalIntervalObject key`) })();
+
+        return `DATE_ADD(${out}, INTERVAL ${q.colRef(value, context)} ${interval})`;
+
+      }, q.colRef(date, context));
+    }
+  });
+}
+
+/**
+ * Formats the `date` value according to the `format` string. If either argument is `NULL`, 
+ * the function returns `NULL`.
+ * 
+ * The specifiers shown in the following table may be used in the format string. The `%` character 
+ * is required before format specifier characters. The specifiers apply to other functions 
+ * as well: `STR_TO_DATE()`, `TIME_FORMAT()`, `UNIX_TIMESTAMP()`.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_FORMAT('2009-10-04 22:23:00', '%W %M %Y');
+ *         -> 'Sunday October 2009'
+ * mysql> SELECT DATE_FORMAT('2007-10-04 22:23:00', '%H:%i:%s');
+ *         -> '22:23:00'
+ * mysql> SELECT DATE_FORMAT('1900-10-04 22:23:00', '%D %y %a %d %m %b %j');
+ *         -> '4th 00 Thu 04 10 Oct 277'
+ * mysql> SELECT DATE_FORMAT('1997-10-04 22:23:00', '%H %k %I %r %T %S %w');
+ *         -> '22 22 10 10:23:00 PM 22:23:00 00 6'
+ * mysql> SELECT DATE_FORMAT('1999-01-01', '%X %V');
+ *         -> '1998 52'
+ * mysql> SELECT DATE_FORMAT('2006-06-00', '%d');
+ *         -> '00'
+ * ```
+ * 
+ * | Specifier | Description|
+ * |-----------|------------|
+ * | %a |	Abbreviated weekday name (Sun..Sat) |
+ * | %b |	Abbreviated month name (Jan..Dec) |
+ * | %c |	Month, numeric (0..12) |
+ * | %D |	Day of the month with English suffix (0th, 1st, 2nd, 3rd, …) |
+ * | %d |	Day of the month, numeric (00..31) |
+ * | %e |	Day of the month, numeric (0..31) |
+ * | %f |	Microseconds (000000..999999) |
+ * | %H |	Hour (00..23) |
+ * | %h |	Hour (01..12) |
+ * | %I |	Hour (01..12) |
+ * | %i |	Minutes, numeric (00..59) |
+ * | %j |	Day of year (001..366) |
+ * | %k |	Hour (0..23) |
+ * | %l |	Hour (1..12) |
+ * | %M |	Month name (January..December) |
+ * | %m |	Month, numeric (00..12) |
+ * | %p |	AM or PM |
+ * | %r |	Time, 12-hour (hh:mm:ss followed by AM or PM) |
+ * | %S |	Seconds (00..59) |
+ * | %s |	Seconds (00..59) |
+ * | %T |	Time, 24-hour (hh:mm:ss) |
+ * | %U |	Week (00..53), where Sunday is the first day of the week; WEEK() mode 0 |
+ * | %u |	Week (00..53), where Monday is the first day of the week; WEEK() mode 1 |
+ * | %V |	Week (01..53), where Sunday is the first day of the week; WEEK() mode 2; used with %X |
+ * | %v |	Week (01..53), where Monday is the first day of the week; WEEK() mode 3; used with %x |
+ * | %W |	Weekday name (Sunday..Saturday) |
+ * | %w |	Day of the week (0=Sunday..6=Saturday) |
+ * | %X |	Year for the week where Sunday is the first day of the week, numeric, four digits; used with %V |
+ * | %x |	Year for the week, where Monday is the first day of the week, numeric, four digits; used with %v |
+ * | %Y |	Year, numeric, four digits |
+ * | %y |	Year, numeric (two digits) |
+ * | %% |	A literal % character |
+ * | %x |	x, for any “x” not listed above |
+ * 
+ * Ranges for the month and day specifiers begin with zero due to the fact that MySQL 
+ * permits the storing of incomplete dates such as `'2014-00-00'`.
+ * 
+ * The language used for day and month names and abbreviations is controlled by the value of 
+ * the [`lc_time_names`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_lc_time_names) 
+ * system variable 
+ * [(Section 10.16, “MySQL Server Locale Support”)](https://dev.mysql.com/doc/refman/8.0/en/locale-support.html).
+ * 
+ * For the `%U`, `%u`, `%V`, and `%v` specifiers, see the description of the `WEEK()` function for information about 
+ * the mode values. The mode affects how week numbering occurs.
+ * 
+ * `DATE_FORMAT()` returns a string with a character set and collation given by `character_set_connection` and 
+ * `collation_connection` so that it can return month and weekday names containing non-ASCII characters.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format
+ * 
+ * See also: 
+ * - {@link str_to_date}
+ * - {@link time_format}
+ * - {@link unix_timestamp}
+ * - {@link week}
+ */
+export function date_format(date: Arg<date>, format: Arg<string>): Col<string> {
+  return new Col({
+    defer(q, context) {
+      return `DATE_FORMAT(${q.colRef(date, context)}, ${q.colRef(format, context)})`
+    }
+  });
+}
+
+/**
+ * These functions perform date arithmetic. The `date` argument specifies the starting `date` or `datetime` value. 
+ * `expr` is an expression specifying the interval value to be added or subtracted from the starting `date`. `expr` 
+ * is evaluated as a `string`; it may start with a `-` for negative intervals. `unit` is a keyword indicating the 
+ * units in which the expression should be interpreted.
+ * 
+ * For more information about temporal interval syntax, including a full list of unit specifiers, the expected form 
+ * of the `expr` argument for each unit value, and rules for operand interpretation in temporal arithmetic, see 
+ * [Temporal Intervals](https://dev.mysql.com/doc/refman/8.0/en/expressions.html#temporal-intervals).
+ * 
+ * #### Usage
+ * ```typescript
+ * date_sub('2023-01-01', { days: 10 }); // => Col<date> -> DATE_SUB('2023-01-01', INTERVAL 10 DAY);
+ * 
+ * date_sub('2023-01-01', { months: 3, year: 1 }); // => Col<date> -> DATE_SUB(DATE_SUB('2023-01-01', INTERVAL 3 MONTH), INTERVAL 1 YEAR);
+ * 
+ * ```
+ * 
+ * The return value depends on the arguments:
+ * - If date is `NULL`, the function returns `NULL`.
+ * - `DATE` if the date argument is a `DATE` value and your calculations involve only `YEAR`, `MONTH`, and `DAY` 
+ *   parts (that is, no time parts).
+ * - (MySQL 8.0.28 and later:) `TIME` if the date argument is a `TIME` value and the calculations involve only `HOURS`,
+ *   `MINUTES`, and `SECONDS` parts (that is, no date parts).
+ * - `DATETIME` if the first argument is a `DATETIME` (or `TIMESTAMP`) value, or if the first argument is a `DATE` 
+ *   and the unit value uses `HOURS`, `MINUTES`, or `SECONDS`, or if the first argument is of type `TIME` and the 
+ *   unit value uses `YEAR`, `MONTH`, or `DAY`.
+ * - (MySQL 8.0.28 and later:) If the first argument is a dynamic parameter (for example, of a prepared statement), 
+ *   its resolved type is `DATE` if the second argument is an interval that contains some combination of `YEAR`, `MONTH`, 
+ *   or `DAY` values only; otherwise, its type is `DATETIME`.
+ * - String otherwise (type `VARCHAR`).
+ * 
+ * > #### Note
+ * > In MySQL 8.0.22 through 8.0.27, when used in prepared statements, these functions returned `DATETIME` 
+ * > values regardless of argument types. (Bug #103781)
+ * 
+ * To ensure that the result is `DATETIME`, you can use `CAST()` to convert the first argument to `DATETIME`.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_SUB('2018-05-01',INTERVAL 1 YEAR);
+ *         -> '2017-05-01'
+ * mysql> SELECT DATE_SUB('2025-01-01 00:00:00', INTERVAL '1 1:1:1' DAY_SECOND);
+ *         -> '2024-12-30 22:58:59'
+ * mysql> SELECT DATE_SUB('1998-01-02', INTERVAL 31 DAY);
+ *         -> '1997-12-02'
+ * ```
+ * 
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-sub
+ * 
+ * See also:
+ * - {@link cast}
+ * - {@link date_add}
+ * - {@link TemporalInterval}
+ * - {@link TEMPORAL_INTERVALS}
+ */
+export function date_sub(date: Arg<date>, arg: ArgMap<TemporalIntervalObject>): Col<date> {
+  return new Col({
+    defer(q, context) {
+      return Object.entries(arg).reduceRight((out, [key, value]) => {
+
+        const interval = TEMPORAL_INTERVAL_MAP.get(key) ?? (() => { throw new Error(`Key ${key} is does not match any TemporalIntervalObject key`) })();
+
+        return `DATE_SUB(${out}, INTERVAL ${q.colRef(value, context)} ${interval})`;
+
+      }, q.colRef(date, context));
+    }
+  });
+}
+
+/**
+ * Internally proxies {@link dayofmonth}
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_day
+ */
+export const day = dayofmonth;
+
+/**
+ * Returns the name of the weekday for `date`. The language used for the name is controlled 
+ * by the value of the 
+ * [`lc_time_names`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_lc_time_names) 
+ * system variable see
+ * [Section 10.16, “MySQL Server Locale Support”](https://dev.mysql.com/doc/refman/8.0/en/locale-support.html). 
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT DAYNAME('2007-02-03');
+ *         -> 'Saturday'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayname
+ */
+export function dayname(date: Arg<date>): Col<string> {
+  return new Col({
+    defer(q, context) {
+      return `DAYNAME(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the day of the month for date, in the range `1` to `31`, or `0` for dates such as 
+ * `'0000-00-00'` or `'2008-00-00'` that have a zero day part. 
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT DAYOFMONTH('2007-02-03');
+ *         -> 3
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayofmonth
+ * 
+ * See also: 
+ * - {@link day}
+ */
+export function dayofmonth(date: Arg<date>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `DAYOFMONTH(${q.colRef(date, context)}`;
+    }
+  });
+}
+
+export function timestamp(date: Arg<date>): Col<time_stamp> {
+  return new Col({
+    defer(q, context) {
+      return `TIMESTAMP(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the weekday index for `date` (1 = Sunday, 2 = Monday, …, 7 = Saturday). These index 
+ * values correspond to the ODBC standard. Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT DAYOFWEEK('2007-02-03');
+ *         -> 7
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayofweek
+ */
+export function dayofweek(date: Arg<date>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `DAYOFWEEK(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the day of the year for `date`, in the range `1` to `366`. Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT DAYOFYEAR('2007-02-03');
+ *         -> 34
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayofyear
+ */
+export function dayofyear(date: Arg<date>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `DAYOFYEAR(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * ```typescript
+ * // TypeScript
+ * extract('year', { from: '2019-07-02' }) // => Col<number> -> EXTRACT(YEAR FROM '2019-07-02')
+ * ```
+ * #
+ * The `EXTRACT()` function uses the same kinds of unit specifiers as `DATE_ADD()` or `DATE_SUB()`, but 
+ * extracts parts from the date rather than performing date arithmetic. For information on the unit 
+ * argument, see {@link TemporalInterval Temporal Intervals}. 
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT EXTRACT(YEAR FROM '2019-07-02');
+ *         -> 2019
+ * mysql> SELECT EXTRACT(YEAR_MONTH FROM '2019-07-02 01:02:03');
+ *         -> 201907
+ * mysql> SELECT EXTRACT(DAY_MINUTE FROM '2019-07-02 01:02:03');
+ *         -> 20102
+ * mysql> SELECT EXTRACT(MICROSECOND FROM '2003-01-02 10:30:00.000123');
+ *         -> 123
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_extract
+ */
+export function extract(unit: TemporalInterval, arg: { from: Arg<date> }): Col<number> {
+  return new Col({
+    defer(q, context) {
+      const interval = TEMPORAL_INTERVAL_MAP.get(unit) ?? (() => { throw new Error(`Key ${unit} does not match any TEMPORAL_INTERVAL_MAP key`) })();
+
+      return `EXTRACT(${interval} FROM ${q.colRef(arg.from, context)})`;
+    }
+  })
+}
+
+/**
+ * Given a day number `N`, returns a `DATE` value. Returns `NULL` if `N` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT FROM_DAYS(730669);
+ *         -> '2000-07-03'
+ * ```
+ * 
+ * Use `FROM_DAYS()` with caution on old dates. It is not intended for use with values that 
+ * precede the advent of the Gregorian calendar (`1582`). See 
+ * [Section 12.9, “What Calendar Is Used By MySQL?”](https://dev.mysql.com/doc/refman/8.0/en/mysql-calendar.html).
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days
+ */
+export function from_days(n: Arg<number>): Col<date> {
+  return new Col({
+    defer(q, context) {
+      return `FROM_DAYS(${q.colRef(n, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns a representation of `unix_timestamp` as a `datetime` or character `string` value. 
+ * The value returned is expressed using the session time zone. (Clients can set the session 
+ * time zone as described in [Section 5.1.15, “MySQL Server Time Zone Support”](https://dev.mysql.com/doc/refman/8.0/en/time-zone-support.html).) 
+ * `unix_timestamp` is an internal timestamp value representing seconds since `'1970-01-01 00:00:00'` 
+ * UTC, such as produced by the `UNIX_TIMESTAMP()` function.
+ * 
+ * If format is omitted, this function returns a `DATETIME` value.
+ * 
+ * If `unix_timestamp` or format is `NULL`, this function returns `NULL`.
+ * 
+ * If `unix_timestamp` is an `integer`, the fractional seconds precision of the `DATETIME` is 
+ * zero. When `unix_timestamp` is a `decimal` value, the fractional seconds precision of the 
+ * `DATETIME` is the same as the precision of the `decimal` value, up to a maximum of 6. When 
+ * `unix_timestamp` is a floating point number, the fractional seconds precision of the 
+ * datetime is 6.
+ * 
+ * On 32-bit platforms, the maximum useful value for `unix_timestamp` is `2147483647.999999`, 
+ * which returns `'2038-01-19 03:14:07.999999'` UTC. On 64-bit platforms running MySQL 8.0.28 
+ * or later, the effective maximum is `32536771199.999999`, which returns `'3001-01-18 23:59:59.999999'` 
+ * UTC. Regardless of platform or version, a greater value for `unix_timestamp` than the effective 
+ * maximum returns `0`.
+ * 
+ * `format` is used to format the result in the same way as the format string used for the 
+ * `DATE_FORMAT()` function. If format is supplied, the value returned is a `VARCHAR`.
+ * 
+ * ```SQL
+ * mysql> SELECT FROM_UNIXTIME(1447430881);
+ *         -> '2015-11-13 10:08:01'
+ * mysql> SELECT FROM_UNIXTIME(1447430881) + 0;
+ *         -> 20151113100801
+ * mysql> SELECT FROM_UNIXTIME(1447430881, '%Y %D %M %h:%i:%s %x');
+ *         -> '2015 13th November 10:08:01 2015'
+ * ```
+ * 
+ * #### Note
+ * > If you use `UNIX_TIMESTAMP()` and `FROM_UNIXTIME()` to convert between values in a 
+ * > non-UTC time zone and Unix timestamp values, the conversion is lossy because the 
+ * > mapping is not one-to-one in both directions. For details, see the description of 
+ * > the `UNIX_TIMESTAMP()` function.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-unixtime
+ * 
+ * See also: 
+ * - {@link unix_timestamp}
+ */
+export function from_unixtime(unix_timestamp: Arg<number>, format: Arg<string>): Col<string>;
+export function from_unixtime(unix_timestamp: Arg<number>): Col<date>;
+export function from_unixtime(unix_timestamp: Arg<number>, format?: Arg<string>): Col {
+  if (format !== undefined)
+    return new Col({
+      defer(q, context) {
+        return `FROM_UNIXTIME(${q.colRef(unix_timestamp, context)}, ${q.colRef(format, context)})`;
+      },
+    });
+  else
+    return new Col({
+      defer(q, context) {
+        return `FROM_UNIXTIME(${q.colRef(unix_timestamp, context)})`;
+      },
+    });
+}
+
+/**
+ * Returns a format string. This function is useful in combination with the `DATE_FORMAT()` 
+ * and the `STR_TO_DATE()` functions.
+ * 
+ * If format is `NULL`, this function returns `NULL`.
+ * 
+ * The possible values for the first and second arguments result in several possible format 
+ * strings (for the specifiers used, see the table in the `DATE_FORMAT()` function description). 
+ * 
+ * `'ISO'` *format refers to ISO 9075, not ISO 8601.*
+ * 
+ * `TIMESTAMP` can also be used as the first argument to `GET_FORMAT()`, in which case the 
+ * function returns the same values as for `DATETIME`.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_FORMAT('2003-10-03',GET_FORMAT(DATE,'EUR'));
+ *         -> '03.10.2003'
+ * mysql> SELECT STR_TO_DATE('10.31.2003',GET_FORMAT(DATE,'USA'));
+ *         -> '2003-10-31'
+ * ```
+ * #
+ * | Function Call	                    | Result                |
+ * |------------------------------------|-----------------------|
+ * | `GET_FORMAT(DATE, 'USA')`          |	`'%m.%d.%Y'`          |
+ * | `GET_FORMAT(DATE, 'JIS')`          |	`'%Y-%m-%d'`          |
+ * | `GET_FORMAT(DATE, 'ISO')`          |	`'%Y-%m-%d'`          |
+ * | `GET_FORMAT(DATE, 'EUR')`          |	`'%d.%m.%Y'`          |
+ * | `GET_FORMAT(DATE, 'INTERNAL')`     |	`'%Y%m%d'`            |
+ * | `GET_FORMAT(DATETIME, 'USA')`      |	`'%Y-%m-%d %H.%i.%s'` |
+ * | `GET_FORMAT(DATETIME, 'JIS')`      |	`'%Y-%m-%d %H:%i:%s'` |
+ * | `GET_FORMAT(DATETIME, 'ISO')`      |	`'%Y-%m-%d %H:%i:%s'` |
+ * | `GET_FORMAT(DATETIME, 'EUR')`      |	`'%Y-%m-%d %H.%i.%s'` |
+ * | `GET_FORMAT(DATETIME, 'INTERNAL')` |	`'%Y%m%d%H%i%s'`      |
+ * | `GET_FORMAT(TIME, 'USA')`          |	`'%h:%i:%s %p'`       |
+ * | `GET_FORMAT(TIME, 'JIS')`          |	`'%H:%i:%s'`          |
+ * | `GET_FORMAT(TIME, 'ISO')`          |	`'%H:%i:%s'`          |
+ * | `GET_FORMAT(TIME, 'EUR')`          |	`'%H.%i.%s'`          |
+ * | `GET_FORMAT(TIME, 'INTERNAL')`     |	`'%H%i%s'`            |
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_get-format 
+ */
+export function get_format(value: Arg<date> | Arg<datetime> | Arg<time_stamp> | Arg<time>, format: 'EUR' | 'USA' | 'JIS' | 'ISO' | 'INTERNAL'): Col<string> {
+  return new Col({
+    defer(q, context) {
+      return `GET_FORMAT(${q.colRef(value, context)}, ${q.colRef(format, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the hour for `time`. The range of the return value is `0` to `23` for time-of-day 
+ * values. However, the range of `TIME` values actually is much larger, so `HOUR` can 
+ * return values greater than `23`. Returns `NULL` if time is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT HOUR('10:05:03');
+ *         -> 10
+ * mysql> SELECT HOUR('272:59:59');
+ *         -> 272
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_hour 
+ */
+export function hour(time: Arg<time>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `HOUR(${q.colRef(time, context)})`;
+    }
+  });
+}
+
+/**
+ * Takes a `date` or `datetime` value and returns the corresponding value for the last day 
+ * of the month. Returns `NULL` if the argument is invalid or `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT LAST_DAY('2003-02-05');
+ *         -> '2003-02-28'
+ * mysql> SELECT LAST_DAY('2004-02-05');
+ *         -> '2004-02-29'
+ * mysql> SELECT LAST_DAY('2004-01-01 01:01:01');
+ *         -> '2004-01-31'
+ * mysql> SELECT LAST_DAY('2003-03-32');
+ *         -> NULL
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_last-day
+ */
+export function last_day(date: Arg<date | datetime>): Col<date> {
+  return new Col({
+    defer(q, context) {
+      return `LAST_DAY(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Internally proxies {@link now}
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_localtime
+ */
+export const localtime = now;
+
+/**
+ * Internally proxies {@link now}
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_localtimestamp
+ */
+export const localtimestamp = now;
+
+/**
+ * Returns the current date and time as a value in `'YYYY-MM-DD hh:mm:ss'` or `YYYYMMDDhhmmss` 
+ * format, depending on whether the function is used in `string` or `numeric` context. 
+ * The value is expressed in the session time zone.
+ * 
+ * If the `fsp` argument is given to specify a fractional seconds precision from `0` to `6`, 
+ * the return value includes a fractional seconds part of that many digits.
+ * 
+ * ```SQL
+ * mysql> SELECT NOW();
+ *         -> '2007-12-15 23:50:26'
+ * mysql> SELECT NOW() + 0;
+ *         -> 20071215235026.000000
+ * ```
+ * 
+ * `NOW()` returns a constant time that indicates the time at which the statement began to 
+ * execute. (Within a stored function or trigger, `NOW()` returns the time at which the 
+ * function or triggering statement began to execute.) This differs from the behavior for 
+ * `SYSDATE()`, which returns the exact time at which it executes.
+ * 
+ * ```SQL
+ * mysql> SELECT NOW(), SLEEP(2), NOW();
+ * -- +---------------------+----------+---------------------+
+ * -- | NOW()               | SLEEP(2) | NOW()               |
+ * -- +---------------------+----------+---------------------+
+ * -- | 2006-04-12 13:47:36 |        0 | 2006-04-12 13:47:36 |
+ * -- +---------------------+----------+---------------------+
+ * 
+ * mysql> SELECT SYSDATE(), SLEEP(2), SYSDATE();
+ * -- +---------------------+----------+---------------------+
+ * -- | SYSDATE()           | SLEEP(2) | SYSDATE()           |
+ * -- +---------------------+----------+---------------------+
+ * -- | 2006-04-12 13:47:44 |        0 | 2006-04-12 13:47:46 |
+ * -- +---------------------+----------+---------------------+
+ * ```
+ * 
+ * In addition, the `SET TIMESTAMP` statement affects the value returned by `NOW()` 
+ * but not by `SYSDATE()`. This means that timestamp settings in the binary log 
+ * have no effect on invocations of `SYSDATE()`. Setting the timestamp to a nonzero 
+ * value causes each subsequent invocation of `NOW()` to return that value. Setting 
+ * the timestamp to zero cancels this effect so that `NOW()` once again returns the 
+ * current date and time.
+ * 
+ * See the description for `SYSDATE()` for additional information about the differences 
+ * between the two functions.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_now
+ * 
+ * See also: 
+ * - {@link sysdate}
+ * 
+ * @param fsp fractional seconds precision from `0` to `6`
+ */
+export function now<T extends (string | number) = string>(fsp?: Arg<0 | 1 | 2 | 3 | 4 | 5 | 6>): Col<T> {
+  return new Col<T>({
+    defer(q, context) {
+      return fsp === undefined ? `NOW(${q.colRef(fsp, context)})` : 'NOW()';
+    }
   });
 }
 
