@@ -31,7 +31,7 @@ type Arg<T = unknown> = Col<T> | T;
 
 export type booleanish = boolean | 0 | 1;
 export type date = string | Date;
-export type datetime = string;
+export type datetime = string | Date;
 export type time_stamp = string;
 export type time = string;
 
@@ -3787,6 +3787,133 @@ export const localtime = now;
 export const localtimestamp = now;
 
 /**
+ * Returns a `date`, given `year` and `day_of_year` values. `day_of_year` must be greater 
+ * than `0` or the result is `NULL`. The result is also `NULL` if either argument is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT MAKEDATE(2011,31), MAKEDATE(2011,32);
+ *         -> '2011-01-31', '2011-02-01'
+ * mysql> SELECT MAKEDATE(2011,365), MAKEDATE(2014,365);
+ *         -> '2011-12-31', '2014-12-31'
+ * mysql> SELECT MAKEDATE(2011,0);
+ *         -> NULL
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_makedate
+ */
+export function makedate(year: Arg<number>, day_of_year: Arg<number>): Col<date> {
+  return new Col({
+    defer(q, context) {
+      return `MAKEDATE(${q.colRef(year, context)}, ${q.colRef(day_of_year, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns a time value calculated from the `hour`, `minute`, and `second` arguments. 
+ * Returns `NULL` if any of its arguments are `NULL`.
+ * 
+ * The `second` argument can have a fractional part.
+ * 
+ * ```SQL
+ * mysql> SELECT MAKETIME(12,15,30);
+ *         -> '12:15:30'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_maketime
+ */
+export function maketime(hour: Arg<number>, minute: Arg<number>, second: Arg<number>): Col<time> {
+  return new Col({
+    defer(q, context) {
+      return `MAKETIME(${q.colRef(hour, context)}, ${q.colRef(minute, context)}, ${q.colRef(second, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the microseconds from the `time` or `datetime` expression `expr` as a number in the range from
+ * `0` to `999999`. Returns `NULL` if `expr` is NU`LL.
+ * 
+ * ```SQL
+ * mysql> SELECT MICROSECOND('12:00:00.123456');
+ *         -> 123456
+ * mysql> SELECT MICROSECOND('2019-12-31 23:59:59.000010');
+ *         -> 10
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_microsecond
+ */
+export function microsecond(expr: Arg<datetime> | Arg<time>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `MICROSECOND(${q.colRef(expr, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the minute for `time`, in the range `0` to `59`, or `NULL` if time is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT MINUTE('2008-02-03 10:05:03');
+ *         -> 5
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_minute
+ */
+export function minute(time: Arg<datetime> | Arg<time>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `MINUTE(${q.colRef(time, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the month for `date`, in the range `1` to `12` for January to December, or 
+ * `0` for dates such as `'0000-00-00'` or `'2008-00-00'` that have a zero month part. 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT MONTH('2008-02-03');
+ *         -> 2
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_month
+ */
+export function month(date: Arg<datetime> | Arg<date>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `MONTH(${q.colRef(date, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the full name of the month for `date`. The language used for the name is controlled by the 
+ * value of the [lc_time_names][1] system variable ([Section 10.16, “MySQL Server Locale Support”][2]).
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT MONTHNAME('2008-02-03');
+ *         -> 'February'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_monthname
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_lc_time_names>
+ * [2]: <https://dev.mysql.com/doc/refman/8.0/en/locale-support.html>
+ */
+export function monthname(date: Arg<datetime> | Arg<date>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `MONTHNAME(${q.colRef(date, context)})`;
+    }
+  })
+}
+
+/**
  * Returns the current date and time as a value in `'YYYY-MM-DD hh:mm:ss'` or `YYYYMMDDhhmmss` 
  * format, depending on whether the function is used in `string` or `numeric` context. 
  * The value is expressed in the session time zone.
@@ -3839,12 +3966,92 @@ export const localtimestamp = now;
  * 
  * @param fsp fractional seconds precision from `0` to `6`
  */
-export function now<T extends (string | number) = string>(fsp?: Arg<0 | 1 | 2 | 3 | 4 | 5 | 6>): Col<T> {
+export function now<T extends (datetime | number) = datetime>(fsp?: Arg<0 | 1 | 2 | 3 | 4 | 5 | 6>): Col<T> {
   return new Col<T>({
     defer(q, context) {
       return fsp === undefined ? `NOW(${q.colRef(fsp, context)})` : 'NOW()';
     }
   });
+}
+
+/**
+ * Adds `N` months to period `P` (in the format `YYMM` or `YYYYMM`). Returns a value in the format `YYYYMM`.
+ * 
+ * The period argument `P` is not a date value.
+ * 
+ * This function returns `NULL` if `P` or `N` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT PERIOD_ADD(200801, 2);
+ *         -> 200803
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_period-add
+ */
+export function period_add(p: Arg<number>, n: Arg<number>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `PERIOD_ADD(${q.colRef(p, context)}, ${q.colRef(n, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the number of months between periods `P1` and `P2`. `P1` and `P2` should be in 
+ * the format `YYMM` or `YYYYMM`. Note that the period arguments `P1` and `P2` are not 
+ * date values.
+ * 
+ * This function returns NULL if P1 or P2 is NULL.
+ * 
+ * ```SQL
+ * mysql> SELECT PERIOD_DIFF(200802, 200703);
+ *         -> 11
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_period-diff
+ */
+export function period_diff(p1: Arg<number>, p2: Arg<number>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `PERIOD_DIFF(${q.colRef(p1, context)}, ${q.colRef(p2, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the quarter of the year for `date`, in the range `1` to `4`, or `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT QUARTER('2008-04-01');
+ *         -> 2
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_quarter
+ */
+export function quarter(date: Arg<datetime> | Arg<date>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `QUARTER(${q.colRef(date, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the second for `time`, in the range `0` to `59`, or `NULL` if time is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT SECOND('10:05:03');
+ *         -> 3
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_second
+ */
+export function second(time: Arg<datetime> | Arg<time>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `SECOND(${q.colRef(time, context)})`;
+    }
+  })
 }
 
 //#endregion
