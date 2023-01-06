@@ -3194,6 +3194,7 @@ export function upper(str: Arg<string>) {
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_adddate
  */
 export function adddate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<date> {
+
   if (typeof arg === 'number' || arg instanceof Col)
     return new Col<date>({
       defer(q, context) {
@@ -3213,6 +3214,7 @@ export function adddate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
         }, q.colRef(date, context));
       }
     });
+
 }
 
 /**
@@ -4053,6 +4055,193 @@ export function second(time: Arg<datetime> | Arg<time>): Col<number> {
     }
   })
 }
+
+/**
+ * Returns the `seconds` argument, converted to hours, minutes, and seconds, as a `TIME` value. The range 
+ * of the result is constrained to that of the `TIME` data type. A warning occurs if the argument 
+ * corresponds to a value outside that range.
+ * 
+ * The function returns NULL if seconds is NULL.
+ * 
+ * ```SQL
+ * mysql> SELECT SEC_TO_TIME(2378);
+ *         -> '00:39:38'
+ * mysql> SELECT SEC_TO_TIME(2378) + 0;
+ *         -> 3938
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_sec-to-time
+ */
+export function sec_to_time(seconds: Arg<number>): Col<time> {
+  return new Col({
+    defer(q, context) {
+      return `SEC_TO_TIME(${q.colRef(seconds, context)})`;
+    }
+  })
+}
+
+/**
+ * This is the inverse of the `DATE_FORMAT()` function. It takes a string `str` and a format string `format`. 
+ * `STR_TO_DATE()` returns a `DATETIME` value if the format string contains both date and time parts, or a 
+ * `DATE` or `TIME` value if the string contains only date or time parts. 
+ * 
+ * If `str` or `format` are `NULL`, the function returns `NULL`. If the date, time, or datetime value extracted 
+ * from `str` is illegal, `STR_TO_DATE()` returns `NULL` and produces a warning.
+ * 
+ * The server scans `str` attempting to match format to it. The `format` string can contain literal characters 
+ * and format specifiers beginning with `%`. Literal characters in format must match literally in `str`. Format 
+ * specifiers in `format` must match a date or time part in `str`. For the specifiers that can be used in format, 
+ * see the `DATE_FORMAT()` function description.
+ * 
+ * 
+ * ```SQL
+ * mysql> SELECT STR_TO_DATE('01,5,2013','%d,%m,%Y');
+ *         -> '2013-05-01'
+ * mysql> SELECT STR_TO_DATE('May 1, 2013','%M %d,%Y');
+ *         -> '2013-05-01'
+ * ```
+ * 
+ * Scanning starts at the beginning of `str` and fails if `format` is found not to match. Extra characters at the 
+ * end of str are ignored.
+ * 
+ * ```SQL
+ * mysql> SELECT STR_TO_DATE('a09:30:17','a%h:%i:%s');
+ *         -> '09:30:17'
+ * mysql> SELECT STR_TO_DATE('a09:30:17','%h:%i:%s');
+ *         -> NULL
+ * mysql> SELECT STR_TO_DATE('09:30:17a','%h:%i:%s');
+ *         -> '09:30:17'
+ * ```
+ * 
+ * Unspecified date or time parts have a value of `0`, so incompletely specified values in `str` produce a result
+ * with some or all parts set to `0`:
+ * 
+ * ```SQL
+ * mysql> SELECT STR_TO_DATE('abc','abc');
+ *         -> '0000-00-00'
+ * mysql> SELECT STR_TO_DATE('9','%m');
+ *         -> '0000-09-00'
+ * mysql> SELECT STR_TO_DATE('9','%s');
+ *         -> '00:00:09'
+ * ```
+ * 
+ * Range checking on the parts of date values is as described in [Section 11.2.2, “The DATE, DATETIME, and TIMESTAMP Types”][1]. 
+ * This means, for example, that “zero” dates or dates with part values of 0 are permitted unless the SQL mode is 
+ * set to disallow such values.
+ * 
+ * ```SQL
+ * mysql> SELECT STR_TO_DATE('00/00/0000', '%m/%d/%Y');
+ *         -> '0000-00-00'
+ * mysql> SELECT STR_TO_DATE('04/31/2004', '%m/%d/%Y');
+ *         -> '2004-04-31'
+ * ```
+ * 
+ * If the [`NO_ZERO_DATE`][2] SQL mode is enabled, zero dates are disallowed. In that case, `STR_TO_DATE()` returns `NULL` 
+ * and generates a warning:
+ * 
+ * ```SQL
+ * mysql> SET sql_mode = '';
+ * mysql> SELECT STR_TO_DATE('00/00/0000', '%m/%d/%Y');
+ * --      +---------------------------------------+
+ * --      | STR_TO_DATE('00/00/0000', '%m/%d/%Y') |
+ * --      +---------------------------------------+
+ * --      | 0000-00-00                            |
+ * --      +---------------------------------------+
+ * mysql> SET sql_mode = 'NO_ZERO_DATE';
+ * mysql> SELECT STR_TO_DATE('00/00/0000', '%m/%d/%Y');
+ * --      +---------------------------------------+
+ * --      | STR_TO_DATE('00/00/0000', '%m/%d/%Y') |
+ * --      +---------------------------------------+
+ * --      | NULL                                  |
+ * --      +---------------------------------------+
+ * mysql> SHOW WARNINGS\G
+ * --      *************************** 1. row ***************************
+ * --        Level: Warning
+ * --         Code: 1411
+ * --      Message: Incorrect datetime value: '00/00/0000' for function str_to_date
+ * ```
+ * 
+ * **Note**
+ * 
+ * You cannot use format `"%X%V"` to convert a year-week string to a date because the combination of 
+ * a year and week does not uniquely identify a year and month if the week crosses a month boundary. 
+ * To convert a year-week to a date, you should also specify the weekday:
+ * 
+ * ```SQL
+ * mysql> SELECT STR_TO_DATE('200442 Monday', '%X%V %W');
+ *         -> '2004-10-18'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_str-to-date
+ * 
+ * See also: 
+ * - {@link date_format}
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/datetime.html>
+ * [2]: <https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_zero_date>
+ */
+export function str_to_date<T extends (date | datetime | time) = string>(str: Arg<string>, format: Arg<string>): Col<T> {
+  return new Col({
+    defer(q, context) {
+      return `STR_TO_DATE(${q.colRef(str, context)}, ${q.colRef(format, context)})`;
+    }
+  })
+}
+
+/**
+ * When invoked with the `INTERVAL` form of the second argument, `SUBDATE()` is a synonym for `DATE_SUB()`. For 
+ * information on the `INTERVAL` unit argument, see the discussion for `DATE_ADD()`.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_SUB('2008-01-02', INTERVAL 31 DAY);
+ *         -> '2007-12-02'
+ * mysql> SELECT SUBDATE('2008-01-02', INTERVAL 31 DAY);
+ *         -> '2007-12-02'
+ * ```
+ * 
+ * The second form enables the use of an integer value for `days`. In such cases, it is interpreted as the 
+ * number of days to be subtracted from the date or datetime expression `expr`.
+ * 
+ * ```SQL
+ * mysql> SELECT SUBDATE('2008-01-02 12:00:00', 31);
+ *         -> '2007-12-02 12:00:00'
+ * ```
+ * 
+ * This function returns `NULL` if any of its arguments are `NULL`.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_subdate
+ * 
+ * See also: 
+ * - {@link date_sub}
+ * - {@link date_add}
+ */
+export function subdate(expr: Arg<date>, days: Arg<number>): Col<date>;
+export function subdate(date: Arg<date>, unit: ArgMap<TemporalIntervalObject>): Col<date>;
+export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<date> {
+
+  if (typeof arg === 'number' || arg instanceof Col)
+    return new Col<date>({
+      defer(q, context) {
+        return `SUBDATE(${q.colRef(date, context)}, ${q.colRef(arg, context)})`;
+      }
+    });
+
+  else
+    return new Col<date>({
+      defer(q, context) {
+        return Object.entries(arg).reduceRight((out, [key, value]) => {
+
+          const interval = TEMPORAL_INTERVAL_MAP.get(key) ?? (() => { throw new Error(`Key ${key} is does not match any TemporalIntervalObject key`) })();
+
+          return `SUBDATE(${out}, INTERVAL ${q.colRef(value, context)} ${interval})`;
+
+        }, q.colRef(date, context));
+      }
+    });
+
+}
+
+
 
 //#endregion
 
