@@ -3616,6 +3616,34 @@ export function from_days(n: Arg<number>): Col<date> {
 }
 
 /**
+ * **Utility Method** - not native to MySQL
+ * 
+ * Shortcuts `STR_TO_DATE()` with formatting to parse ISO8601 (JavaScript) friendly times.
+ * 
+ * ```SQL
+ * mysql> SELECT STR_TO_DATE('2023-01-06T04:36:34.413Z', '%Y-%m-%dT%H:%i:%s.%fZ');
+ *         -> '2023-01-06 04:36:34.413000'
+ * ```
+ * 
+ * **Usage**
+ * ```typescript
+ * const date = new Date().toISOString(); // -> '2023-01-06T04:36:34.413Z'
+ * from_iso(date); // => Col<date> -> 'STR_TO_DATE('2023-01-06T04:36:34.413Z', '%Y-%m-%dT%H:%i:%s.%fZ')'
+ * ```
+ * 
+ * See also: 
+ * - {@link date_format}
+ * - {@link to_iso}
+ */
+export function from_iso(str: Arg<string>): Col<date> {
+  return new Col({
+    defer(q, context) {
+      return `STR_TO_DATE(${q.colRef(str, context)}, '%Y-%m-%dT%H:%i:%s.%fZ')`;
+    }
+  })
+}
+
+/**
  * Returns a representation of `unix_timestamp` as a `datetime` or character `string` value. 
  * The value returned is expressed using the session time zone. (Clients can set the session 
  * time zone as described in [Section 5.1.15, “MySQL Server Time Zone Support”](https://dev.mysql.com/doc/refman/8.0/en/time-zone-support.html).) 
@@ -4239,6 +4267,29 @@ export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
       }
     });
 
+}
+
+/**
+ * **Utility Method** - not native to MySQL
+ * 
+ * Shortcuts `DATE_FORMAT()` with preset formatting to translate to ISO8601 (JavaScript) 
+ * friendly times.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE_FORMAT('2023-01-06 04:36:34.413000', '%Y-%m-%dT%H:%i:%s.%fZ');
+ *         -> '2023-01-06T04:36:34.413000Z'
+ * ```
+ * 
+ * See also: 
+ * - {@link date_format}
+ * - {@link from_iso}
+ */
+ export function to_iso(date: Arg<date>): Col<string> {
+  return new Col({
+    defer(q, context) {
+      return `DATE_FORMAT(${q.colRef(date, context)}, '%Y-%m-%dT%H:%i:%s.%fZ')`;
+    }
+  })
 }
 
 
