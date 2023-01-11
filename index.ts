@@ -29,13 +29,13 @@ export type SelectResult<T> = (QColMapToNative<GetInnerType<T>> & Omit<RowDataPa
 
 type Arg<T = unknown> = Col<T> | T;
 
-export type booleanish = boolean | 0 | 1;
-export type date = string | Date;
-export type datetime = string | Date;
-export type time_stamp = string;
-export type time = string;
+export type DbBoolean = boolean | 0 | 1;
+export type DbDate = string | Date;
+export type DbDateTime = string | Date;
+export type DbTimestamp = string;
+export type DbTime = string;
 
-export type temporal = date | datetime | time_stamp;
+export type Temporal = DbDate | DbDateTime | DbTimestamp;
 
 const TEMPORAL_INTERVALS_NUMERIC = [
   'microsecond',
@@ -55,10 +55,14 @@ type TemporalIntervalsNumericValues =
   { microseconds: number } |
   { second: number } |
   { seconds: number } |
+  { minute: number } |
+  { minutes: number } |
   { hour: number } |
   { hours: number } |
   { day: number } |
   { days: number } |
+  { week: number } |
+  { weeks: number } |
   { hour: number } |
   { hours: number } |
   { day: number } |
@@ -3193,17 +3197,17 @@ export function upper(str: Arg<string>) {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_adddate
  */
-export function adddate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<date> {
+export function adddate(date: Arg<DbDate>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<DbDate> {
 
   if (typeof arg === 'number' || arg instanceof Col)
-    return new Col<date>({
+    return new Col<DbDate>({
       defer(q, context) {
         return `ADDDATE(${q.colRef(date, context)}, ${q.colRef(arg, context)})`;
       }
     });
 
   else
-    return new Col<date>({
+    return new Col<DbDate>({
       defer(q, context) {
         return Object.entries(arg).reduceRight((out, [key, value]) => {
 
@@ -3285,8 +3289,8 @@ export function adddate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
  * - {@link TemporalInterval}
  * - {@link TEMPORAL_INTERVALS}
  */
-export function date_add(date: Arg<date>, arg: ArgMap<TemporalIntervalObject>): Col<date> {
-  return new Col<date>({
+export function date_add(date: Arg<DbDate>, arg: ArgMap<TemporalIntervalObject>): Col<DbDate> {
+  return new Col<DbDate>({
     defer(q, context) {
       return Object.entries(arg).reduceRight((out, [key, value]) => {
 
@@ -3380,7 +3384,7 @@ export function date_add(date: Arg<date>, arg: ArgMap<TemporalIntervalObject>): 
  * - {@link unix_timestamp}
  * - {@link week}
  */
-export function date_format(date: Arg<date>, format: Arg<string>): Col<string> {
+export function date_format(date: Arg<DbDate>, format: Arg<string>): Col<string> {
   return new Col({
     defer(q, context) {
       return `DATE_FORMAT(${q.colRef(date, context)}, ${q.colRef(format, context)})`
@@ -3444,7 +3448,7 @@ export function date_format(date: Arg<date>, format: Arg<string>): Col<string> {
  * - {@link TemporalInterval}
  * - {@link TEMPORAL_INTERVALS}
  */
-export function date_sub(date: Arg<date>, arg: ArgMap<TemporalIntervalObject>): Col<date> {
+export function date_sub(date: Arg<DbDate>, arg: ArgMap<TemporalIntervalObject>): Col<DbDate> {
   return new Col({
     defer(q, context) {
       return Object.entries(arg).reduceRight((out, [key, value]) => {
@@ -3481,7 +3485,7 @@ export const day = dayofmonth;
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayname
  */
-export function dayname(date: Arg<date>): Col<string> {
+export function dayname(date: Arg<DbDate>): Col<string> {
   return new Col({
     defer(q, context) {
       return `DAYNAME(${q.colRef(date, context)})`;
@@ -3505,18 +3509,10 @@ export function dayname(date: Arg<date>): Col<string> {
  * See also: 
  * - {@link day}
  */
-export function dayofmonth(date: Arg<date>): Col<number> {
+export function dayofmonth(date: Arg<DbDate>): Col<number> {
   return new Col({
     defer(q, context) {
       return `DAYOFMONTH(${q.colRef(date, context)}`;
-    }
-  });
-}
-
-export function timestamp(date: Arg<date>): Col<time_stamp> {
-  return new Col({
-    defer(q, context) {
-      return `TIMESTAMP(${q.colRef(date, context)})`;
     }
   });
 }
@@ -3532,7 +3528,7 @@ export function timestamp(date: Arg<date>): Col<time_stamp> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayofweek
  */
-export function dayofweek(date: Arg<date>): Col<number> {
+export function dayofweek(date: Arg<DbDate>): Col<number> {
   return new Col({
     defer(q, context) {
       return `DAYOFWEEK(${q.colRef(date, context)})`;
@@ -3550,7 +3546,7 @@ export function dayofweek(date: Arg<date>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_dayofyear
  */
-export function dayofyear(date: Arg<date>): Col<number> {
+export function dayofyear(date: Arg<DbDate>): Col<number> {
   return new Col({
     defer(q, context) {
       return `DAYOFYEAR(${q.colRef(date, context)})`;
@@ -3583,7 +3579,7 @@ export function dayofyear(date: Arg<date>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_extract
  */
-export function extract(unit: TemporalInterval, arg: { from: Arg<date> }): Col<number> {
+export function extract(unit: TemporalInterval, arg: { from: Arg<DbDate> }): Col<number> {
   return new Col({
     defer(q, context) {
       const interval = TEMPORAL_INTERVAL_MAP.get(unit) ?? (() => { throw new Error(`Key ${unit} does not match any TEMPORAL_INTERVAL_MAP key`) })();
@@ -3607,7 +3603,7 @@ export function extract(unit: TemporalInterval, arg: { from: Arg<date> }): Col<n
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days
  */
-export function from_days(n: Arg<number>): Col<date> {
+export function from_days(n: Arg<number>): Col<DbDate> {
   return new Col({
     defer(q, context) {
       return `FROM_DAYS(${q.colRef(n, context)})`;
@@ -3635,7 +3631,7 @@ export function from_days(n: Arg<number>): Col<date> {
  * - {@link date_format}
  * - {@link to_iso}
  */
-export function from_iso(str: Arg<string>): Col<date> {
+export function from_iso(str: Arg<string>): Col<DbDate> {
   return new Col({
     defer(q, context) {
       return `STR_TO_DATE(${q.colRef(str, context)}, '%Y-%m-%dT%H:%i:%s.%fZ')`;
@@ -3690,7 +3686,7 @@ export function from_iso(str: Arg<string>): Col<date> {
  * - {@link unix_timestamp}
  */
 export function from_unixtime(unix_timestamp: Arg<number>, format: Arg<string>): Col<string>;
-export function from_unixtime(unix_timestamp: Arg<number>): Col<date>;
+export function from_unixtime(unix_timestamp: Arg<number>): Col<DbDate>;
 export function from_unixtime(unix_timestamp: Arg<number>, format?: Arg<string>): Col {
   if (format !== undefined)
     return new Col({
@@ -3747,7 +3743,7 @@ export function from_unixtime(unix_timestamp: Arg<number>, format?: Arg<string>)
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_get-format 
  */
-export function get_format(value: Arg<date> | Arg<datetime> | Arg<time_stamp> | Arg<time>, format: 'EUR' | 'USA' | 'JIS' | 'ISO' | 'INTERNAL'): Col<string> {
+export function get_format(value: Arg<DbDate> | Arg<DbDateTime> | Arg<DbTimestamp> | Arg<DbTime>, format: 'EUR' | 'USA' | 'JIS' | 'ISO' | 'INTERNAL'): Col<string> {
   return new Col({
     defer(q, context) {
       return `GET_FORMAT(${q.colRef(value, context)}, ${q.colRef(format, context)})`;
@@ -3769,7 +3765,7 @@ export function get_format(value: Arg<date> | Arg<datetime> | Arg<time_stamp> | 
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_hour 
  */
-export function hour(time: Arg<time>): Col<number> {
+export function hour(time: Arg<DbTime>): Col<number> {
   return new Col({
     defer(q, context) {
       return `HOUR(${q.colRef(time, context)})`;
@@ -3794,7 +3790,7 @@ export function hour(time: Arg<time>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_last-day
  */
-export function last_day(date: Arg<date | datetime>): Col<date> {
+export function last_day(date: Arg<DbDate | DbDateTime>): Col<DbDate> {
   return new Col({
     defer(q, context) {
       return `LAST_DAY(${q.colRef(date, context)})`;
@@ -3831,7 +3827,7 @@ export const localtimestamp = now;
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_makedate
  */
-export function makedate(year: Arg<number>, day_of_year: Arg<number>): Col<date> {
+export function makedate(year: Arg<number>, day_of_year: Arg<number>): Col<DbDate> {
   return new Col({
     defer(q, context) {
       return `MAKEDATE(${q.colRef(year, context)}, ${q.colRef(day_of_year, context)})`;
@@ -3852,7 +3848,7 @@ export function makedate(year: Arg<number>, day_of_year: Arg<number>): Col<date>
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_maketime
  */
-export function maketime(hour: Arg<number>, minute: Arg<number>, second: Arg<number>): Col<time> {
+export function maketime(hour: Arg<number>, minute: Arg<number>, second: Arg<number>): Col<DbTime> {
   return new Col({
     defer(q, context) {
       return `MAKETIME(${q.colRef(hour, context)}, ${q.colRef(minute, context)}, ${q.colRef(second, context)})`;
@@ -3873,7 +3869,7 @@ export function maketime(hour: Arg<number>, minute: Arg<number>, second: Arg<num
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_microsecond
  */
-export function microsecond(expr: Arg<datetime> | Arg<time>): Col<number> {
+export function microsecond(expr: Arg<DbDateTime> | Arg<DbTime>): Col<number> {
   return new Col({
     defer(q, context) {
       return `MICROSECOND(${q.colRef(expr, context)})`;
@@ -3891,7 +3887,7 @@ export function microsecond(expr: Arg<datetime> | Arg<time>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_minute
  */
-export function minute(time: Arg<datetime> | Arg<time>): Col<number> {
+export function minute(time: Arg<DbDateTime> | Arg<DbTime>): Col<number> {
   return new Col({
     defer(q, context) {
       return `MINUTE(${q.colRef(time, context)})`;
@@ -3911,7 +3907,7 @@ export function minute(time: Arg<datetime> | Arg<time>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_month
  */
-export function month(date: Arg<datetime> | Arg<date>): Col<number> {
+export function month(date: Arg<DbDateTime> | Arg<DbDate>): Col<number> {
   return new Col({
     defer(q, context) {
       return `MONTH(${q.colRef(date, context)})`;
@@ -3935,7 +3931,7 @@ export function month(date: Arg<datetime> | Arg<date>): Col<number> {
  * [1]: <https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_lc_time_names>
  * [2]: <https://dev.mysql.com/doc/refman/8.0/en/locale-support.html>
  */
-export function monthname(date: Arg<datetime> | Arg<date>): Col<number> {
+export function monthname(date: Arg<DbDateTime> | Arg<DbDate>): Col<number> {
   return new Col({
     defer(q, context) {
       return `MONTHNAME(${q.colRef(date, context)})`;
@@ -3996,7 +3992,7 @@ export function monthname(date: Arg<datetime> | Arg<date>): Col<number> {
  * 
  * @param fsp fractional seconds precision from `0` to `6`
  */
-export function now<T extends (datetime | number) = datetime>(fsp?: Arg<0 | 1 | 2 | 3 | 4 | 5 | 6>): Col<T> {
+export function now<T extends (DbDateTime | number) = DbDateTime>(fsp?: Arg<0 | 1 | 2 | 3 | 4 | 5 | 6>): Col<T> {
   return new Col<T>({
     defer(q, context) {
       return fsp === undefined ? `NOW(${q.colRef(fsp, context)})` : 'NOW()';
@@ -4058,7 +4054,7 @@ export function period_diff(p1: Arg<number>, p2: Arg<number>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_quarter
  */
-export function quarter(date: Arg<datetime> | Arg<date>): Col<number> {
+export function quarter(date: Arg<DbDateTime> | Arg<DbDate>): Col<number> {
   return new Col({
     defer(q, context) {
       return `QUARTER(${q.colRef(date, context)})`;
@@ -4076,7 +4072,7 @@ export function quarter(date: Arg<datetime> | Arg<date>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_second
  */
-export function second(time: Arg<datetime> | Arg<time>): Col<number> {
+export function second(time: Arg<DbDateTime> | Arg<DbTime>): Col<number> {
   return new Col({
     defer(q, context) {
       return `SECOND(${q.colRef(time, context)})`;
@@ -4100,7 +4096,7 @@ export function second(time: Arg<datetime> | Arg<time>): Col<number> {
  * 
  * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_sec-to-time
  */
-export function sec_to_time(seconds: Arg<number>): Col<time> {
+export function sec_to_time(seconds: Arg<number>): Col<DbTime> {
   return new Col({
     defer(q, context) {
       return `SEC_TO_TIME(${q.colRef(seconds, context)})`;
@@ -4208,7 +4204,7 @@ export function sec_to_time(seconds: Arg<number>): Col<time> {
  * [1]: <https://dev.mysql.com/doc/refman/8.0/en/datetime.html>
  * [2]: <https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_zero_date>
  */
-export function str_to_date<T extends (date | datetime | time) = string>(str: Arg<string>, format: Arg<string>): Col<T> {
+export function str_to_date<T extends (DbDate | DbDateTime | DbTime) = string>(str: Arg<string>, format: Arg<string>): Col<T> {
   return new Col({
     defer(q, context) {
       return `STR_TO_DATE(${q.colRef(str, context)}, ${q.colRef(format, context)})`;
@@ -4243,19 +4239,19 @@ export function str_to_date<T extends (date | datetime | time) = string>(str: Ar
  * - {@link date_sub}
  * - {@link date_add}
  */
-export function subdate(expr: Arg<date>, days: Arg<number>): Col<date>;
-export function subdate(date: Arg<date>, unit: ArgMap<TemporalIntervalObject>): Col<date>;
-export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<date> {
+export function subdate(expr: Arg<DbDate>, days: Arg<number>): Col<DbDate>;
+export function subdate(date: Arg<DbDate>, unit: ArgMap<TemporalIntervalObject>): Col<DbDate>;
+export function subdate(date: Arg<DbDate>, arg: Arg<number> | ArgMap<TemporalIntervalObject>): Col<DbDate> {
 
   if (typeof arg === 'number' || arg instanceof Col)
-    return new Col<date>({
+    return new Col<DbDate>({
       defer(q, context) {
         return `SUBDATE(${q.colRef(date, context)}, ${q.colRef(arg, context)})`;
       }
     });
 
   else
-    return new Col<date>({
+    return new Col<DbDate>({
       defer(q, context) {
         return Object.entries(arg).reduceRight((out, [key, value]) => {
 
@@ -4267,6 +4263,368 @@ export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
       }
     });
 
+}
+
+/**
+ * `SUBTIME()` returns `expr1 − expr2` expressed as a value in the same format as `expr1`. `expr1` is a 
+ * time or `datetime` expression, and expr2 is a `time` expression.
+ * 
+ * Resolution of this function's return type is performed as it is for the `ADDTIME()` function; 
+ * see the description of that function for more information.
+ * 
+ * This function returns `NULL` if expr1 or expr2 is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT SUBTIME('2007-12-31 23:59:59.999999','1 1:1:1.000002');
+ *         -> '2007-12-30 22:58:58.999997'
+ * mysql> SELECT SUBTIME('01:00:00.999999', '02:00:00.999998');
+ *         -> '-00:59:59.999999'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_subtime
+ * 
+ * See also: 
+ * - {@link addtime}
+ */
+export function subtime<T extends (DbDateTime | DbTime)>(expr1: Arg<T>, expr2: Arg<DbTime>): Col<T> {
+  return new Col({
+    defer(q, context) {
+      return `SUBTIME(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
+    }
+  })
+}
+
+/**
+ * Returns the current date and time as a value in `'YYYY-MM-DD hh:mm:ss'` or `YYYYMMDDhhmmss` format, depending 
+ * on whether the function is used in string or numeric context.
+ * 
+ * If the `fsp` argument is given to specify a fractional seconds precision from `0` to `6`, the return value 
+ * includes a fractional seconds part of that many digits.
+ * 
+ * `SYSDATE()` returns the time at which it executes. This differs from the behavior for `NOW()`, which returns 
+ * a constant time that indicates the time at which the statement began to execute. (Within a stored function or 
+ * trigger, `NOW()` returns the time at which the function or triggering statement began to execute.)
+ * 
+ * ```SQL
+ * mysql> SELECT NOW(), SLEEP(2), NOW();
+ * --     +---------------------+----------+---------------------+
+ * --     | NOW()               | SLEEP(2) | NOW()               |
+ * --     +---------------------+----------+---------------------+
+ * --     | 2006-04-12 13:47:36 |        0 | 2006-04-12 13:47:36 |
+ * --     +---------------------+----------+---------------------+
+ * 
+ * mysql> SELECT SYSDATE(), SLEEP(2), SYSDATE();
+ * --     +---------------------+----------+---------------------+
+ * --     | SYSDATE()           | SLEEP(2) | SYSDATE()           |
+ * --     +---------------------+----------+---------------------+
+ * --     | 2006-04-12 13:47:44 |        0 | 2006-04-12 13:47:46 |
+ * --     +---------------------+----------+---------------------+
+ * ```
+ * 
+ * In addition, the `SET TIMESTAMP` statement affects the value returned by `NOW()` but not by `SYSDATE()`. This means 
+ * that timestamp settings in the binary log have no effect on invocations of `SYSDATE()`.
+ * 
+ * Because SYSDATE() can return different values even within the same statement, and is not affected by SET TIMESTAMP, 
+ * it is nondeterministic and therefore unsafe for replication if statement-based binary logging is used. If that is 
+ * a problem, you can use row-based logging.
+ * 
+ * Alternatively, you can use the [`--sysdate-is-now`][1] option to cause `SYSDATE()` to be an alias for `NOW()`. This 
+ * works if the option is used on both the replication source server and the replica.
+ * 
+ * The nondeterministic nature of `SYSDATE()` also means that indexes cannot be used for evaluating expressions that 
+ * refer to it.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_sysdate
+ * 
+ * See also: 
+ * - {@link now}
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/server-options.html#option_mysqld_sysdate-is-now>
+ */
+export function sysdate(fsp?: Arg<number>): Col<DbDateTime> {
+  return new Col({
+    defer(q, context) {
+      return fsp !== undefined ? `SYSDATE(${q.colRef(fsp, context)})` : `SYSDATE()`;
+    }
+  });
+}
+
+/**
+ * 
+ * Extracts the time part of the time or datetime expression `expr` and returns it as a string.
+ * Returns `NULL` if `expr` is `NULL`.
+ * 
+ * This function is unsafe for statement-based replication. A warning is logged if you use this 
+ * function when [`binlog_format`][1] is set to `STATEMENT`.
+ * 
+ * ```SQL
+ * mysql> SELECT TIME('2003-12-31 01:02:03');
+ *         -> '01:02:03'
+ * mysql> SELECT TIME('2003-12-31 01:02:03.000123');
+ *         -> '01:02:03.000123'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_time
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_format>
+ */
+export function time(expr: Arg<DbTime> | Arg<DbDateTime>): Col<DbTime> {
+  return new Col({
+    defer(q, context) {
+      return `TIME(${q.colRef(expr, context)})`;
+    }
+  });
+}
+
+/**
+ * `TIMEDIFF()` returns `expr1 − expr2` expressed as a `time` value. `expr1` and `expr2` are strings which are 
+ * converted to `TIME` or `DATETIME` expressions; these must be of the same type following conversion. 
+ * Returns `NULL` if `expr1` or `expr2` is `NULL`.
+ * 
+ * The result returned by `TIMEDIFF()` is limited to the range allowed for `TIME` values. Alternatively, 
+ * you can use either of the functions `TIMESTAMPDIFF()` and `UNIX_TIMESTAMP()`, both of which return integers.
+ * 
+ * ```SQL
+ * mysql> SELECT TIMEDIFF('2000-01-01 00:00:00', '2000-01-01 00:00:00.000001');
+ *         -> '-00:00:00.000001'
+ * mysql> SELECT TIMEDIFF('2008-12-31 23:59:59.000001', '2008-12-30 01:01:01.000002');
+ *         -> '46:58:57.999999'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_timediff
+ * 
+ * See also: 
+ * - {@link timestampdiff}
+ * - {@link unix_timestamp}
+ */
+export function timediff<T extends (Arg<DbTime> | Arg<DbDateTime>)>(expr1: T, expr2: T): Col<DbTime> {
+  return new Col({
+    defer(q, context) {
+      return `TIMEDIFF(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
+    }
+  });
+}
+
+/**
+ * With a single argument, this function returns the `date` or `datetime` expression `expr` as a `datetime` value. 
+ * With two arguments, it adds the `time` expression `expr2` to the `date` or `datetime` expression `expr1` and 
+ * returns the result as a datetime value. 
+ * 
+ * Returns `NULL` if `expr1`, or `expr2` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT TIMESTAMP('2003-12-31');
+ *         -> '2003-12-31 00:00:00'
+ * mysql> SELECT TIMESTAMP('2003-12-31 12:00:00','12:00:00');
+ *         -> '2004-01-01 00:00:00'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_timestamp
+ */
+export function timestamp(expr1: Arg<DbDate> | Arg<DbDateTime>, expr2?: Arg<DbTime>): Col<DbDateTime> {
+  return new Col({
+    defer(q, context) {
+      return expr2 !== undefined
+        ? `TIMESTAMP(${q.colRef(expr1, context)})`
+        : `TIMESTAMP(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
+    }
+  });
+}
+
+/**
+ * Adds the integer expression `interval` to the date or datetime expression `datetime_expr`. 
+ * The unit for `interval` is given by the unit argument, which should be one of the following 
+ * values: `MICROSECOND` (microseconds), `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`, `MONTH`, 
+ * `QUARTER`, or `YEAR`.
+ * 
+ * The unit value may be specified using one of keywords as shown, or with a prefix of `SQL_TSI_`. 
+ * For example, `DAY` and `SQL_TSI_DAY` both are legal.
+ * 
+ * This function returns `NULL` if interval or datetime_expr is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT TIMESTAMPADD(MINUTE, 1, '2003-01-02');
+ *         -> '2003-01-02 00:01:00'
+ * mysql> SELECT TIMESTAMPADD(WEEK, 1, '2003-01-02');
+ *         -> '2003-01-09'
+ * ```
+ * 
+ * **Usage** 
+ * ```typescript
+ * timestampadd({ minute: 1 }, '2003-01-02'); // => Col<DbDateTime> -> TIMESTAMPADD(MINUTE, 1, '2003-01-02')
+ * 
+ * // Nested multi-expressions
+ * timestampadd({ minute: 1, week: 1 }, '2003-01-02'); // => ... -> TIMESTAMPADD(WEEK, 1, TIMESTAMPADD(MINUTE, 1, '2003-01-02'))
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_timestampadd
+ */
+export function timestampadd<T extends (DbTime | DbDateTime)>(arg: ArgMap<TemporalIntervalsNumericValues>, datetime_expr: Arg<T>): Col<T> {
+  return new Col({
+    defer(q, context) {
+      return Object.entries(arg).reduceRight((out, [key, value]) => {
+
+        const interval = TEMPORAL_INTERVAL_MAP.get(key) ?? (() => { throw new Error(`Key ${key} is does not match any TemporalIntervalObject key`) })();
+
+        return `TIMESTAMPADD(${interval}, ${q.colRef(value, context)}, ${out})`;
+
+      }, q.colRef(datetime_expr, context));
+    }
+  });
+}
+
+/**
+ * Returns `datetime_expr2 − datetime_expr1`, where `datetime_expr1` and `datetime_expr2` are date or 
+ * datetime expressions. One expression may be a date and the other a datetime; a date value is 
+ * treated as a datetime having the time part `'00:00:00'` where necessary. The unit for the 
+ * result (an integer) is given by the unit argument. The legal values for unit are the same as those 
+ * listed in the description of the `TIMESTAMPADD()` function.
+ * 
+ * This function returns `NULL` if `datetime_expr1` or `datetime_expr2` is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT TIMESTAMPDIFF(MONTH,'2003-02-01','2003-05-01');
+ *         -> 3
+ * mysql> SELECT TIMESTAMPDIFF(YEAR,'2002-05-01','2001-01-01');
+ *         -> -1
+ * mysql> SELECT TIMESTAMPDIFF(MINUTE,'2003-02-01','2003-05-01 12:05:55');
+ *         -> 128885
+ * ```
+ * 
+ * **Note**
+ * The order of the date or datetime arguments for this function is the opposite of that used with the 
+ * `TIMESTAMP()` function when invoked with 2 arguments.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_timestampdiff
+ * 
+ * See also: 
+ * - {@link timestampadd}
+ */
+export function timestampdiff(unit: TemporalIntervalsNumeric, datetime_expr1: Arg<DbDate> | Arg<DbDateTime>, datetime_expr2: Arg<DbDate> | Arg<DbDateTime>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      const interval = TEMPORAL_INTERVAL_MAP.get(unit) ?? (() => { throw new Error(`Unit ${unit} is does not match any TemporalIntervalObject key`) })();
+
+      return `TIMESTAMPDIFF(${interval}, ${q.colRef(datetime_expr1, context)}, ${q.colRef(datetime_expr2, context)})`;
+    }
+  });
+}
+
+/**
+ * This is used like the `DATE_FORMAT()` function, but the format string may contain format specifiers 
+ * only for hours, minutes, seconds, and microseconds. Other specifiers produce a `NULL` or `0`. 
+ * `TIME_FORMAT()` returns `NULL` if time or format is `NULL`.
+ * 
+ * If the time value contains an hour part that is greater than `23`, the `%H` and `%k` hour format 
+ * specifiers produce a value larger than the usual range of `0..23`. The other hour format specifiers 
+ * produce the hour value modulo `12`.
+ * 
+ * ```SQL
+ * mysql> SELECT TIME_FORMAT('100:00:00', '%H %k %h %I %l');
+ *         -> '100 100 04 04 4'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_time-format
+ * 
+ * See also: 
+ * - {@link date_format}
+ */
+export function time_format(time: Arg<DbTime>, format: Arg<string>): Col<string> {
+  return new Col({
+    defer(q, context) {
+      return `TIME_FORMAT(${q.colRef(time, context)}, ${q.colRef(format, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the `time` argument, converted to seconds. Returns `NULL` if time is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT TIME_TO_SEC('22:23:00');
+ *         -> 80580
+ * mysql> SELECT TIME_TO_SEC('00:39:38');
+ *         -> 2378
+ * ```
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_time-to-sec
+ */
+export function time_to_sec(time: Arg<DbTime>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `TIME_TO_SEC(${q.colRef(time, context)})`;
+    }
+  });
+}
+
+/**
+ * Given a date `date`, returns a day number (the number of days since year `0`). 
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT TO_DAYS(950501);
+ *         -> 728779
+ * mysql> SELECT TO_DAYS('2007-10-07');
+ *         -> 733321
+ * ```
+ * 
+ * `TO_DAYS()` is not intended for use with values that precede the advent of the Gregorian 
+ * calendar (1582), because it does not take into account the days that were lost when the 
+ * calendar was changed. For dates before 1582 (and possibly a later year in other locales), 
+ * results from this function are not reliable. See [Section 12.9, “What Calendar Is Used By MySQL?”][1], 
+ * for details.
+ * 
+ * Remember that MySQL converts two-digit year values in dates to four-digit form using the rules in 
+ * [Section 11.2, “Date and Time Data Types”][2]. For example, `'2008-10-07'` and `'08-10-07'` are seen 
+ * as identical dates:
+ * 
+ * ```SQL
+ * mysql> SELECT TO_DAYS('2008-10-07'), TO_DAYS('08-10-07');
+ *         -> 733687, 733687
+ * ```
+ * 
+ * In MySQL, the zero date is defined as `'0000-00-00'`, even though this date is itself 
+ * considered invalid. This means that, for `'0000-00-00'` and `'0000-01-01'`, `TO_DAYS()` 
+ * returns the values shown here:
+ * 
+ * ```SQL
+ * mysql> SELECT TO_DAYS('0000-00-00');
+ * --     +-----------------------+
+ * --     | to_days('0000-00-00') |
+ * --     +-----------------------+
+ * --     |                  NULL |
+ * --     +-----------------------+
+ * 
+ * mysql> SHOW WARNINGS;
+ * --     +---------+------+----------------------------------------+
+ * --     | Level   | Code | Message                                |
+ * --     +---------+------+----------------------------------------+
+ * --     | Warning | 1292 | Incorrect datetime value: '0000-00-00' |
+ * --     +---------+------+----------------------------------------+
+ * 
+ * 
+ * mysql> SELECT TO_DAYS('0000-01-01');
+ * --     +-----------------------+
+ * --     | to_days('0000-01-01') |
+ * --     +-----------------------+
+ * --     |                     1 |
+ * --     +-----------------------+
+ * ```
+ * 
+ * This is true whether or not the [`ALLOW_INVALID_DATES`][3] SQL server mode is enabled.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_to-days
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/mysql-calendar.html>
+ * [2]: <https://dev.mysql.com/doc/refman/8.0/en/date-and-time-types.html>
+ * [3]: <https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_allow_invalid_dates>
+ */
+export function to_days(date: Arg<DbDate>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `TO_DAYS(${q.colRef(date, context)})`;
+    }
+  });
 }
 
 /**
@@ -4284,7 +4642,7 @@ export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
  * - {@link date_format}
  * - {@link from_iso}
  */
- export function to_iso(date: Arg<date>): Col<string> {
+export function to_iso(date: Arg<DbDate>): Col<string> {
   return new Col({
     defer(q, context) {
       return `DATE_FORMAT(${q.colRef(date, context)}, '%Y-%m-%dT%H:%i:%s.%fZ')`;
@@ -4292,6 +4650,309 @@ export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
   })
 }
 
+/**
+ * Given a date or datetime `expr`, returns the number of seconds since the year `0`. If `expr` is 
+ * not a valid date or datetime value (including `NULL`), it returns `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT TO_SECONDS(950501);
+ *         -> 62966505600
+ * mysql> SELECT TO_SECONDS('2009-11-29');
+ *         -> 63426672000
+ * mysql> SELECT TO_SECONDS('2009-11-29 13:43:32');
+ *         -> 63426721412
+ * mysql> SELECT TO_SECONDS( NOW() );
+ *         -> 63426721458
+ * ```
+ * 
+ * Like `TO_DAYS()`, `TO_SECONDS()` is not intended for use with values that precede the advent of the 
+ * Gregorian calendar (1582), because it does not take into account the days that were lost when the 
+ * calendar was changed. For dates before 1582 (and possibly a later year in other locales), results 
+ * from this function are not reliable. See [Section 12.9, “What Calendar Is Used By MySQL?”][1], 
+ * for details.
+ * 
+ * Like `TO_DAYS()`, `TO_SECONDS()`, converts two-digit year values in dates to four-digit form using 
+ * the rules in [Section 11.2, “Date and Time Data Types"][2].
+ * 
+ * In MySQL, the zero date is defined as `'0000-00-00'`, even though this date is itself considered 
+ * invalid. This means that, for `'0000-00-00'` and `'0000-01-01'`, `TO_SECONDS()` returns the 
+ * values shown here:
+ * 
+ * ```SQL
+ * mysql> SELECT TO_SECONDS('0000-00-00');
+ * --     +--------------------------+
+ * --     | TO_SECONDS('0000-00-00') |
+ * --     +--------------------------+
+ * --     |                     NULL |
+ * --     +--------------------------+
+ * 
+ * mysql> SHOW WARNINGS;
+ * --     +---------+------+----------------------------------------+
+ * --     | Level   | Code | Message                                |
+ * --     +---------+------+----------------------------------------+
+ * --     | Warning | 1292 | Incorrect datetime value: '0000-00-00' |
+ * --     +---------+------+----------------------------------------+
+ * 
+ * mysql> SELECT TO_SECONDS('0000-01-01');
+ * --     +--------------------------+
+ * --     | TO_SECONDS('0000-01-01') |
+ * --     +--------------------------+
+ * --     |                    86400 |
+ * --     +--------------------------+
+ * ```
+ * 
+ * This is true whether or not the [`ALLOW_INVALID_DATES`][3] SQL server mode is enabled.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_to-seconds
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/mysql-calendar.html>
+ * [2]: <https://dev.mysql.com/doc/refman/8.0/en/date-and-time-types.html>
+ * [3]: <https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_allow_invalid_dates>
+ */
+export function to_seconds(expr: Arg<DbDate> | Arg<DbDateTime>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `TO_SECONDS(${q.colRef(expr, context)})`;
+    }
+  });
+}
+
+/**
+ * If `UNIX_TIMESTAMP()` is called with no `date` argument, it returns a Unix timestamp representing 
+ * seconds since `'1970-01-01 00:00:00'` UTC.
+ * 
+ * If `UNIX_TIMESTAMP()` is called with a date argument, it returns the value of the argument as 
+ * seconds since `'1970-01-01 00:00:00'` UTC. The server interprets date as a value in the session 
+ * time zone and converts it to an internal Unix timestamp value in UTC. (Clients can set the session 
+ * time zone as described in [Section 5.1.15, “MySQL Server Time Zone Support”][1].) The date argument 
+ * may be a `DATE`, `DATETIME`, or `TIMESTAMP` string, or a number in `YYMMDD`, `YYMMDDhhmmss`, 
+ * `YYYYMMDD`, or `YYYYMMDDhhmmss` format. If the argument includes a time part, it may optionally 
+ * include a fractional seconds part.
+ * 
+ * The return value is an `integer` if no argument is given or the argument does not include a fractional 
+ * seconds part, or `DECIMAL` if an argument is given that includes a fractional seconds part.
+ * 
+ * When the date argument is a `TIMESTAMP` column, `UNIX_TIMESTAMP()` returns the internal timestamp value 
+ * directly, with no implicit “string-to-Unix-timestamp” conversion.
+ * 
+ * Prior to MySQL 8.0.28, the valid range of argument values is the same as for the `TIMESTAMP` data type: 
+ * `'1970-01-01 00:00:01.000000'` UTC to `'2038-01-19 03:14:07.999999'` UTC. This is also the case in 
+ * MySQL 8.0.28 and later for 32-bit platforms. For MySQL 8.0.28 and later running on 64-bit platforms, 
+ * the valid range of argument values for `UNIX_TIMESTAMP()` is `'1970-01-01 00:00:01.000000'` UTC to 
+ * `'3001-01-19 03:14:07.999999'` UTC (corresponding to `32536771199.999999` seconds).
+ * 
+ * Regardless of MySQL version or platform architecture, if you pass an out-of-range date to `UNIX_TIMESTAMP()`,
+ * it returns `0`. If `date` is `NULL`, it returns `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT UNIX_TIMESTAMP();
+ *         -> 1447431666
+ * mysql> SELECT UNIX_TIMESTAMP('2015-11-13 10:20:19');
+ *         -> 1447431619
+ * mysql> SELECT UNIX_TIMESTAMP('2015-11-13 10:20:19.012');
+ *         -> 1447431619.012
+ * ```
+ * 
+ * If you use `UNIX_TIMESTAMP()` and `FROM_UNIXTIME()` to convert between values in a non-UTC time zone and 
+ * Unix timestamp values, the conversion is lossy because the mapping is not one-to-one in both directions. 
+ * For example, due to conventions for local time zone changes such as Daylight Saving Time (DST), it is 
+ * possible for `UNIX_TIMESTAMP()` to map two values that are distinct in a non-UTC time zone to the same 
+ * Unix timestamp value. `FROM_UNIXTIME()` maps that value back to only one of the original values. Here is 
+ * an example, using values that are distinct in the MET time zone:
+ * 
+ * ```SQL
+ * mysql> SET time_zone = 'MET';
+ * mysql> SELECT UNIX_TIMESTAMP('2005-03-27 03:00:00');
+ * --     +---------------------------------------+
+ * --     | UNIX_TIMESTAMP('2005-03-27 03:00:00') |
+ * --     +---------------------------------------+
+ * --     |                            1111885200 |
+ * --     +---------------------------------------+
+ * 
+ * mysql> SELECT UNIX_TIMESTAMP('2005-03-27 02:00:00');
+ * --     +---------------------------------------+
+ * --     | UNIX_TIMESTAMP('2005-03-27 02:00:00') |
+ * --     +---------------------------------------+
+ * --     |                            1111885200 |
+ * --     +---------------------------------------+
+ * 
+ * mysql> SELECT FROM_UNIXTIME(1111885200);
+ * --     +---------------------------+
+ * --     | FROM_UNIXTIME(1111885200) |
+ * --     +---------------------------+
+ * --     | 2005-03-27 03:00:00       |
+ * --     +---------------------------+
+ * ```
+ * 
+ * **Note**
+ * To use named time zones such as `'MET'` or `'Europe/Amsterdam'`, the time zone tables must be properly 
+ * set up. For instructions, see [Section 5.1.15, “MySQL Server Time Zone Support”][1].
+ * 
+ * If you want to subtract `UNIX_TIMESTAMP()` columns, you might want to cast them to signed integers. 
+ * [See Section 12.11, “Cast Functions and Operators”][2].
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_unix-timestamp
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/time-zone-support.html>
+ * [2]: <https://dev.mysql.com/doc/refman/8.0/en/cast-functions.html>
+ */
+export function unix_timestamp(date?: Arg<DbDate> | Arg<DbDateTime> | Arg<DbTimestamp> | Arg<number>): Col<number> {
+  if (date !== undefined)
+    return new Col({
+      defer(q, context) {
+        return `UNIX_TIMESTAMP(${q.colRef(date, context)})`;
+      },
+    })
+  else
+    return new Col({ path: `UNIX_TIMESTAMP()` });
+}
+
+/**
+ * Returns the current UTC date as a value in `'YYYY-MM-DD'` or `YYYYMMDD` format, depending on whether 
+ * the function is used in string or numeric context.
+ * 
+ * ```SQL
+ * mysql> SELECT UTC_DATE(), UTC_DATE() + 0;
+ *         -> '2003-08-14', 20030814
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_utc-date
+ */
+export function utc_date<T extends (DbDate | number) = DbDate>(): Col<T> {
+  return new Col({ path: `UTC_NOW()` })
+}
+
+/**
+ * Returns the current UTC time as a value in `'hh:mm:ss'` or `hhmmss` format, depending on whether 
+ * the function is used in string or numeric context.
+ * 
+ * If the `fsp` argument is given to specify a fractional seconds precision from `0` to `6`, the 
+ * return value includes a fractional seconds part of that many digits.
+ * 
+ * ```SQL
+ * mysql> SELECT UTC_TIME(), UTC_TIME() + 0;
+ *         -> '18:07:53', 180753.000000
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_utc-time
+ */
+export function utc_time<T extends (DbTime | number) = DbTime>(fsp?: Arg<number>): Col<T> {
+  if (fsp !== undefined)
+    return new Col({
+      defer(q, context) {
+        return `UTC_TIME(${q.colRef(fsp, context)})`;
+      }
+    });
+
+  else
+    return new Col({ path: 'UTC_TIME()' });
+}
+
+/**
+ * Returns the current UTC date and time as a value in `'YYYY-MM-DD hh:mm:ss'` or `YYYYMMDDhhmmss` format, 
+ * depending on whether the function is used in string or numeric context.
+ * 
+ * If the `fsp` argument is given to specify a fractional seconds precision from `0` to `6`, the return 
+ * value includes a fractional seconds part of that many digits.
+ * 
+ * ```SQL
+ * mysql> SELECT UTC_TIMESTAMP(), UTC_TIMESTAMP() + 0;
+ *         -> '2003-08-14 18:08:04', 20030814180804.000000
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_utc-timestamp
+ */
+export function utc_timestamp<T extends (DbTimestamp | number) = DbTimestamp>(fsp?: Arg<number>): Col<T> {
+  if (fsp !== undefined)
+    return new Col({
+      defer(q, context) {
+        return `UTC_TIMESTAMP(${q.colRef(fsp, context)})`;
+      }
+    });
+
+  else
+    return new Col({ path: 'UTC_TIMESTAMP()' });
+}
+
+/**
+ * This function returns the week number for date. The two-argument form of `WEEK()` enables you to 
+ * specify whether the week starts on Sunday or Monday and whether the return value should be in the 
+ * range from `0` to `53` or from `1` to `53`. If the mode argument is omitted, the value of the 
+ * [`default_week_format`][1] system variable is used. 
+ * 
+ * For a `NULL` date value, the function returns `NULL`.
+ * 
+ * The following table describes how the mode argument works:
+ * 
+ * | Mode |	First day of week	| Range	| Week 1 is the first week …    |
+ * |------|-------------------|-------|-------------------------------|
+ * | 0    |	Sunday            | 0-53	| with a Sunday in this year    |
+ * | 1    |	Monday            | 0-53	| with 4 or more days this year |
+ * | 2    |	Sunday            | 1-53	| with a Sunday in this year    |
+ * | 3    |	Monday            | 1-53	| with 4 or more days this year |
+ * | 4    |	Sunday            | 0-53	| with 4 or more days this year |
+ * | 5    |	Monday            | 0-53	| with a Monday in this year    |
+ * | 6    |	Sunday            | 1-53	| with 4 or more days this year |
+ * | 7    |	Monday            | 1-53	| with a Monday in this year    |
+ * 
+ * For mode values with a meaning of “with 4 or more days this year,” weeks are numbered according 
+ * to ISO 8601:1988:
+ * - If the week containing January 1 has 4 or more days in the new year, it is week 1.
+ * - Otherwise, it is the last week of the previous year, and the next week is week 1.
+ * 
+ * ```SQL
+ * mysql> SELECT WEEK('2008-02-20');
+ *         -> 7
+ * mysql> SELECT WEEK('2008-02-20',0);
+ *         -> 7
+ * mysql> SELECT WEEK('2008-02-20',1);
+ *         -> 8
+ * mysql> SELECT WEEK('2008-12-31',1);
+ *         -> 53
+ * ```
+ * 
+ * If a date falls in the last week of the previous year, MySQL returns `0` if you do not 
+ * use `2`, `3`, `6`, or `7` as the optional mode argument:
+ * 
+ * ```SQL
+ * mysql> SELECT YEAR('2000-01-01'), WEEK('2000-01-01',0);
+ *         -> 2000, 0
+ * ```
+ * 
+ * One might argue that `WEEK()` should return `52` because the given date actually occurs in the 
+ * 52nd week of 1999. `WEEK()` returns `0` instead so that the return value is “the week number in 
+ * the given year.” This makes use of the `WEEK()` function reliable when combined with other 
+ * functions that extract a date part from a date.
+ * 
+ * If you prefer a result evaluated with respect to the year that contains the first day of the week 
+ * for the given date, use `0`, `2`, `5`, or `7` as the optional mode argument.
+ * 
+ * ```SQL
+ * mysql> SELECT WEEK('2000-01-01',2);
+ *         -> 52
+ * ```
+ * 
+ * Alternatively, use the `YEARWEEK()` function:
+ * 
+ * ```SQL
+ * mysql> SELECT YEARWEEK('2000-01-01');
+ *         -> 199952
+ * mysql> SELECT MID(YEARWEEK('2000-01-01'),5,2);
+ *         -> '52'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_week
+ * 
+ * See also: 
+ * - {@link yearweek}
+ */
+export function week(date: Arg<DbDate>, mode?: Arg<number>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return mode !== undefined ? `WEEK(${q.colRef(date, context)}, ${q.colRef(mode, context)})` : `WEEK(${q.colRef(date, context)})`;
+    }
+  });
+}
 
 
 //#endregion
@@ -4326,7 +4987,7 @@ export function subdate(date: Arg<date>, arg: Arg<number> | ArgMap<TemporalInter
  * is(1, true); // => Col<boolean> -> 1 IS TRUE
  * ```
  */
-export function is(target: Arg<booleanish>, value: Arg<boolean> | typeof NULL | typeof UNKNOWN | null) {
+export function is(target: Arg<DbBoolean>, value: Arg<boolean> | typeof NULL | typeof UNKNOWN | null) {
   return new Col<boolean>({
     defer(q, ctx) {
       if (NULL.equals(value))
