@@ -23,11 +23,11 @@ type GetInnerType<T> = T extends QSelected<any, infer U> ? U :
   T extends QOrdered<any, infer U, any> ? U :
   never;
 
-type QColMapToNative<T> = { [Key in keyof T]: T[Key] extends Col<infer U> ? U : never };
+export type QColMapToNative<T> = { [Key in keyof T]: T[Key] extends Col<infer U> ? U : never };
 
 export type SelectResult<T> = (QColMapToNative<GetInnerType<T>> & Omit<RowDataPacket, 'constructor'>)[];
 
-type Arg<T = unknown> = Col<T> | T;
+export type Arg<T = unknown> = Col<T> | T;
 
 export type DbBoolean = boolean | 0 | 1;
 export type DbDate = string | Date;
@@ -1477,7 +1477,7 @@ export function ln(x: Arg<number>) {
  * 
  * `LOG(B,X)` is equivalent to `LOG(X) / LOG(B)`.
  * 
- *  * ```SQL
+ * ```SQL
  * mysql> SELECT LOG(2,65536);
  *         -> 16
  * mysql> SELECT LOG(10,100);
@@ -2533,7 +2533,7 @@ export function oct(big_int: Arg<number>) {
  * ```
  *  
  * See also: 
- * - // TODO: ASCII
+ * - {@link ascii}
  */
 export function ord(str: Arg<string>) {
   return new Col<number>({
@@ -3222,6 +3222,157 @@ export function adddate(date: Arg<DbDate>, arg: Arg<number> | ArgMap<TemporalInt
 }
 
 /**
+ * `ADDTIME()` adds `expr2` to `expr1` and returns the result. `expr1` is a time or datetime expression, and 
+ * `expr2` is a time expression. Returns `NULL` if `expr1` or `expr2` is `NULL`.
+ * 
+ * Beginning with MySQL 8.0.28, the return type of this function and of the `SUBTIME()` function is determined 
+ * as follows:
+ * - If the first argument is a dynamic parameter (such as in a prepared statement), the return type is TIME.
+ * - Otherwise, the resolved type of the function is derived from the resolved type of the first argument.
+ * 
+ * ```SQL
+ * mysql> SELECT ADDTIME('2007-12-31 23:59:59.999999', '1 1:1:1.000002');
+ *         -> '2008-01-02 01:01:01.000001'
+ * mysql> SELECT ADDTIME('01:00:00.999999', '02:00:00.999998');
+ *         -> '03:00:01.999997'
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_addtime
+ * 
+ * See also: 
+ * - {@link subtime}
+ */
+export function addtime<T extends (DbTime | DbDateTime)>(expr1: Arg<T>, expr2: Arg<DbTime>): Col<T> {
+  return new Col({
+    defer(q, context) {
+      return `ADDTIME(${q.colRef(expr1, context)}, ${q.colRef(expr2, context)})`;
+    }
+  });
+}
+
+/**
+ * `CONVERT_TZ()` converts a datetime value `dt` from the time zone given by `from_tz` to the time zone 
+ * given by `to_tz` and returns the resulting value. Time zones are specified as described in 
+ * [Section 5.1.15, “MySQL Server Time Zone Support”][1]. This function returns `NULL` if any of the 
+ * arguments are invalid, or if any of them are `NULL`.
+ * 
+ * On 32-bit platforms, the supported range of values for this function is the same as for the TIMESTAMP 
+ * type (see [Section 11.2.1, “Date and Time Data Type Syntax”][2], for range information). On 64-bit 
+ * platforms, beginning with MySQL 8.0.28, the maximum supported value is `'3001-01-18 23:59:59.999999'` UTC.
+ * 
+ * Regardless of platform or MySQL version, if the value falls out of the supported range when converted from 
+ * `from_tz` to UTC, no conversion occurs.
+ * 
+ * ```SQL
+ * mysql> SELECT CONVERT_TZ('2004-01-01 12:00:00','GMT','MET');
+ *         -> '2004-01-01 13:00:00'
+ * mysql> SELECT CONVERT_TZ('2004-01-01 12:00:00','+00:00','+10:00');
+ *         -> '2004-01-01 22:00:00'
+ * ```
+ * 
+ * **Note**
+ * To use named time zones such as `'MET'` or `'Europe/Amsterdam'`, the time zone tables must be properly set up. 
+ * For instructions, see [Section 5.1.15, “MySQL Server Time Zone Support”][1].
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_convert-tz
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/time-zone-support.html>
+ * [2]: <https://dev.mysql.com/doc/refman/8.0/en/date-and-time-type-syntax.html>
+ */
+export function convert_tz(dt: Arg<DbDateTime>, from_tz: Arg<string>, to_tz: Arg<string>): Col<DbDateTime> {
+  return new Col({
+    defer(q, context) {
+      return `CONVERT_TZ(${q.colRef(dt, context)}, ${q.colRef(from_tz, context)}, ${q.colRef(to_tz, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the current date as a value in `'YYYY-MM-DD'` or `YYYYMMDD` format, depending on whether the 
+ * function is used in string or numeric context.
+ * 
+ * ```SQL
+ * mysql> SELECT CURDATE();
+ *         -> '2008-06-13'
+ * mysql> SELECT CURDATE() + 0;
+ *         -> 20080613
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_curdate
+ */
+export function curdate<T extends (DbDate | number) = DbDate>(): Col<T> {
+  return new Col({ path: 'CURDATE()' });
+}
+
+/**
+ * Internally proxies {@link curdate}
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_current-date
+ */
+export const current_date = curdate;
+
+/**
+ * Internally proxies {@link curtime}
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_current-time
+ */
+export const current_time = curtime;
+
+/**
+ * Internally proxies {@link now}
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_current-timestamp
+ */
+export const current_timestamp = now;
+
+/**
+ * Returns the current time as a value in `'hh:mm:ss'` or `hhmmss` format, depending on whether the 
+ * function is used in string or numeric context. The value is expressed in the session time zone.
+ * 
+ * If the `fsp` argument is given to specify a fractional seconds precision from `0` to `6`, the 
+ * return value includes a fractional seconds part of that many digits.
+ * 
+ * ```SQL
+ * mysql> SELECT CURTIME();
+ *        -> '19:25:37'
+ * 
+ * mysql> SELECT CURTIME() + 0;
+ *        -> 192537
+ * 
+ * mysql> SELECT CURTIME(3);
+ *        -> '19:25:37.840'
+ * ```
+ * 
+ */
+export function curtime<T extends (DbTime | number) = DbTime>(fsp?: number): Col<T> {
+  if (fsp !== undefined)
+    return new Col({
+      defer(q, context) {
+        return `CURTIME(${q.colRef(fsp, context)})`;
+      }
+    });
+  else
+    return new Col({ path: 'CURTIME()' });
+}
+
+/**
+ * Extracts the date part of the date or datetime expression `expr`. Returns `NULL` if expr is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT DATE('2003-12-31 01:02:03');
+ *         -> '2003-12-31'
+ * ```
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date
+ */
+export function date(expr: Arg<DbDate> | Arg<DbDateTime>): Col<DbDate> {
+  return new Col({
+    defer(q, context) {
+      return `DATE(${q.colRef(expr, context)})`;
+    }
+  });
+}
+
+/**
  * These functions perform date arithmetic. The `date` argument specifies the starting `date` or `datetime` value. 
  * `expr` is an expression specifying the interval value to be added or subtracted from the starting `date`. `expr` 
  * is evaluated as a `string`; it may start with a `-` for negative intervals. `unit` is a keyword indicating the 
@@ -3685,19 +3836,19 @@ export function from_iso(str: Arg<string>): Col<DbDate> {
  * See also: 
  * - {@link unix_timestamp}
  */
-export function from_unixtime(unix_timestamp: Arg<number>, format: Arg<string>): Col<string>;
-export function from_unixtime(unix_timestamp: Arg<number>): Col<DbDate>;
-export function from_unixtime(unix_timestamp: Arg<number>, format?: Arg<string>): Col {
+export function from_unixtime(timestamp: Arg<number>, format: Arg<string>): Col<string>;
+export function from_unixtime(timestamp: Arg<number>): Col<DbDate>;
+export function from_unixtime(timestamp: Arg<number>, format?: Arg<string>): Col {
   if (format !== undefined)
     return new Col({
       defer(q, context) {
-        return `FROM_UNIXTIME(${q.colRef(unix_timestamp, context)}, ${q.colRef(format, context)})`;
+        return `FROM_UNIXTIME(${q.colRef(timestamp, context)}, ${q.colRef(format, context)})`;
       },
     });
   else
     return new Col({
       defer(q, context) {
-        return `FROM_UNIXTIME(${q.colRef(unix_timestamp, context)})`;
+        return `FROM_UNIXTIME(${q.colRef(timestamp, context)})`;
       },
     });
 }
@@ -4954,6 +5105,104 @@ export function week(date: Arg<DbDate>, mode?: Arg<number>): Col<number> {
   });
 }
 
+/**
+ * Returns the weekday index for `date` (`0` = Monday, `1` = Tuesday, … `6` = Sunday). Returns `NULL` 
+ * if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT WEEKDAY('2008-02-03 22:23:00');
+ *         -> 6
+ * mysql> SELECT WEEKDAY('2007-11-06');
+ *         -> 1
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_weekday
+ */
+export function weekday(date: Arg<DbDate> | Arg<DbDateTime>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `WEEKDAY(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the calendar week of the `date` as a number in the range from `1` to `53`. 
+ * 
+ * Returns `NULL` if `date` is `NULL`.
+ * 
+ * `WEEKOFYEAR()` is a compatibility function that is equivalent to `WEEK(date,3)`.
+ * 
+ * ```SQL
+ * mysql> SELECT WEEKOFYEAR('2008-02-20');
+ *         -> 8
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_weekofyear
+ */
+export function weekofyear(date: Arg<DbDate> | Arg<DbDateTime>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `WEEKOFYEAR(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns the year for `date`, in the range `1000` to `9999`, or `0` for the “zero” `date`. 
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * ```SQL
+ * mysql> SELECT YEAR('1987-01-01');
+ *         -> 1987
+ * ```
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_year
+ */
+export function year(date: Arg<DbDate> | Arg<DbDateTime>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return `YEAR(${q.colRef(date, context)})`;
+    }
+  });
+}
+
+/**
+ * Returns year and week for a date. The year in the result may be different from the year in the 
+ * `date` argument for the first and the last week of the year. 
+ * 
+ * Returns `NULL` if date is `NULL`.
+ * 
+ * The `mode` argument works exactly like the `mode` argument to `WEEK()`. For the single-argument 
+ * syntax, a mode value of `0` is used. Unlike `WEEK()`, the value of [`default_week_format`][1] does 
+ * not influence `YEARWEEK()`.
+ * 
+ * ```SQL
+ * mysql> SELECT YEARWEEK('1987-01-01');
+ *         -> 198652
+ * ```
+ * 
+ * The week number is different from what the `WEEK()` function would return (`0`) for optional 
+ * arguments `0` or `1`, as `WEEK()` then returns the week in the context of the given year.
+ * 
+ * Ref: https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_yearweek
+ * 
+ * See also: 
+ * - {@link week}
+ * 
+ * [1]: <https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_default_week_format>
+ */
+export function yearweek(date: Arg<DbDate>, mode?: Arg<number>): Col<number> {
+  return new Col({
+    defer(q, context) {
+      return mode !== undefined ?
+        `YEARWEEK(${q.colRef(date, context)}, ${q.colRef(mode, context)})` :
+        `YEARWEEK(${q.colRef(date, context)})`;
+    }
+  });
+}
+
 
 //#endregion
 
@@ -6100,8 +6349,6 @@ export function convert(arg: Arg, opt: { using: string } | DataType) {
 
 // #endregion
 
-
-
 type MatchSearchModifiers = 'IN NATURAL LANGUAGE MODE' | 'IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION' | 'IN BOOLEAN MODE' | 'WITH QUERY EXPANSION';
 
 export function match(cols: Col<string>[], opts: { against: Arg<string>; in?: MatchSearchModifiers & string }) {
@@ -6117,4 +6364,3 @@ export function match(cols: Col<string>[], opts: { against: Arg<string>; in?: Ma
     }
   });
 }
-
