@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { RowDataPacket } from 'mysql2/promise';
+import { RowDataPacket } from 'mysql2';
 
 type EscapeFn = (value: any) => string;
 
@@ -9,6 +9,79 @@ let escape: EscapeFn = () => {
 
 export function registerEscaper(fn: EscapeFn) {
   escape = fn;
+}
+
+const IS_COL = Symbol('TO_COL');
+const TO_DATE = Symbol('TO_DATE');
+const TO_STRING = Symbol('TO_STRING');
+const TO_NUMBER = Symbol('TO_NUMBER');
+const TO_TRUE = Symbol('TO_TRUE');
+const TO_FALSE = Symbol('TO_FALSE');
+
+function toCol<T>(obj: Arg, instruction?: symbol): Col {
+
+  if (!instruction && !isArg(obj, (o) => instruction = o))
+    throw new Error(`toCol -> obj does not comply to type Arg: ${JSON.stringify(obj)}`);
+
+  switch (instruction!) {
+    case IS_COL:
+      return obj as Col<T>;
+    case TO_DATE:
+      return from_iso((obj as Date).toISOString());
+    case TO_TRUE:
+      return new Col<boolean>({ path: 'TRUE' });
+    case TO_FALSE:
+      return new Col<boolean>({ path: 'FALSE' });
+    case TO_STRING:
+    case TO_NUMBER:
+      return new Col<string>({ path: escape(obj) });
+    default:
+      throw new Error(`Cannot convert ${JSON.stringify(obj)} to Col`);
+  }
+}
+
+function isArg(obj: unknown, out?: (instruction: symbol) => void): obj is Arg {
+  let instruction: symbol | undefined = undefined;
+  let result = false;
+
+  if (obj instanceof Col) {
+    result = true;
+    instruction = IS_COL;
+  }
+
+  else if (obj instanceof Date) {
+    result = true;
+    instruction = TO_DATE;
+  }
+
+  else if (obj === true) {
+    result = true;
+    instruction = TO_TRUE;
+  }
+
+  else if (obj === false) {
+    result = true;
+    instruction = TO_FALSE;
+  }
+
+  else {
+    const type = typeof obj;
+
+    if (type === 'string') {
+      result = true;
+      instruction = TO_STRING;
+    }
+
+    else if (type === 'number') {
+      result = true;
+      instruction = TO_NUMBER;
+    }
+  }
+
+  if (out && instruction)
+    out(instruction);
+
+  return result;
 }
 
 export interface IHasUUID {
@@ -25,9 +98,16 @@ type GetInnerType<T> = T extends QSelected<any, infer U> ? U :
 
 export type QColMapToNative<T> = { [Key in keyof T]: T[Key] extends Col<infer U> ? U : never };
 
-export type SelectResult<T> = (QColMapToNative<GetInnerType<T>> & Omit<RowDataPacket, 'constructor'>)[];
+export type SelectResult<T> = (QColMapToNative<GetInnerType<T>> & RowDataPacket)[];
 
 export type Arg<T = unknown> = Col<T> | T;
+export type ArgToColMap<T = unknown> =
+  T extends Col ? T :
+  T extends Record<string, Arg> ? { [Key in keyof T]: ArgToColMap<T[Key]> } :
+  T extends string ? Col<string> :
+  T extends number ? Col<number> :
+  T extends boolean ? Col<boolean> :
+  Col<T>;
 
 export type DbBoolean = boolean | 0 | 1;
 export type DbDate = string | Date;
@@ -292,13 +372,15 @@ const TEMPORAL_INTERVAL_MAP = TEMPORAL_INTERVALS.reduce((map, str) => {
 }, new Map<string, string>());
 
 export class Table<T> {
-  public model: T;
+
   constructor(
     public name: string,
     public ctor: new () => T
   ) {
-    this.model = new this.ctor();
+    this.model = new ctor();
   }
+
+  readonly model: T;
 }
 
 export interface IQColArgs<ColType = any, TParent extends object = any> {
@@ -368,7 +450,7 @@ function operation<T>(fn: NonNullable<Col<T>['defer']>) {
 }
 
 export function subquery<T>(value: QSubquery<T>) {
-  return new Col<T>({
+  return new Col<T extends Col<infer U> ? U : T>({
     defer: (q) => {
 
       const output = value.toSql({
@@ -390,25 +472,22 @@ type QExpressionMap<T> = { [Index in keyof T]: Col<T[Index]> | T[Index] }
 
 class QTable<T extends object = any> {
 
-  public readonly id = randomUUID();
-  public readonly cols: QColMap<T>;
+  readonly id = randomUUID();
+  readonly base: T;
+  readonly path: string;
+  cols: QColMap<T>;
+  alias: string;
 
-  constructor(
-    public base: T,
-    public path: string,
-    public alias: string = '',
-    cols?: QColMap<T>
-  ) {
+  constructor(args: { base: T, path: string, alias?: string, cols?: QColMap<T> }) {
 
-    if (cols)
-      this.cols = cols;
+    this.base = args.base || (() => { throw new Error('QTable.constructor -> args.base must be provided'); })();
+    this.path = args.path || (() => { throw new Error('QTable.constructor -> args.path must be provided'); })();
+    this.alias = args.alias || '';
 
-    else
-      this.cols = Object.keys(base).reduce((prev, key) => {
-        prev[key as keyof QColMap<T>] = new Col({ path: key, parent: this });
-        return prev;
-      }, {} as QColMap<T>)
-
+    this.cols = args.cols || Object.keys(args.base).reduce((prev, key) => {
+      prev[key as keyof QColMap<T>] = new Col({ path: key, parent: this });
+      return prev;
+    }, {} as QColMap<T>);
 
   }
 }
@@ -455,7 +534,7 @@ export class Query {
     let alias = this.aliases.get(table.id);
 
     if (!alias) {
-      alias = table.alias || `T${this.ptr_table++}`;
+      alias = table.alias || `\`T${this.ptr_table++}\``;
       table.alias = alias;
       this.aliases.set(table.id, table.alias);
     }
@@ -467,7 +546,7 @@ export class Query {
     if (obj instanceof Col)
       return obj;
     else if (obj instanceof Date)
-      return new Col<string>({ path: obj.toISOString() });
+      return from_iso(obj.toISOString());
     else if (obj === true)
       return new Col<boolean>({ path: 'TRUE' });
     else if (obj === false)
@@ -475,7 +554,7 @@ export class Query {
     else if (typeof obj === 'string' || typeof obj === 'number')
       return new Col<T>({ path: this.paramaterize(obj) })
     else
-      throw new Error(`Cannot convert ${JSON.stringify(obj)} to QCol`);
+      throw new Error(`Cannot convert ${JSON.stringify(obj)} to Col`);
   }
 
   colRef<T = unknown>(arg: Col<T> | Arg<T>, context: AccessContext = AccessContext.Default) {
@@ -490,7 +569,7 @@ export class Query {
       if (col.defer)
         path = col.defer(this, context);
       else if (col.parent)
-        path = `${this.tableAlias(col.parent)}.${col.path}`;
+        path = `${this.tableAlias(col.parent)}.\`${col.path}\``;
 
       stored = { path, alias: '' };
 
@@ -498,7 +577,7 @@ export class Query {
 
     }
 
-    if (context === AccessContext.Where || context === AccessContext.GroupBy || context === AccessContext.Default)
+    if (context === AccessContext.Where || context === AccessContext.GroupBy || context === AccessContext.Default || context === AccessContext.JoinOn)
       return stored.path;
 
     return stored.alias || stored.path;
@@ -557,36 +636,44 @@ export class Query {
         }
         else {
           if (col.parent)
-            path = `${this.tableAlias(col.parent)}.${path}`;
+            path = `${this.tableAlias(col.parent)}.\`${path}\``;
+          else
+            path = this.toCol(col).path;
         }
 
         this.col_store.set(col.id, { path, alias });
 
-
-        return str + `${path} AS ${alias}`;
+        return str + `${path} AS \`${alias}\``;
       }
 
     }, '');
 
-    return `SELECT ${colsStr} FROM ${from.path} ${this.tableAlias(from)}`;
+    return `SELECT ${colsStr} FROM \`${from.path}\` ${this.tableAlias(from)}`;
   }
 
   private insertStr({ from = this.from } = {}) {
-    let q = `INSERT INTO ${from.path}`;
-    q += `\r\n(${this.insert.cols.join(', ')})`;
+    let q = `INSERT INTO \`${from.path}\``;
+    q += `\r\n(${this.insert.cols.reduce((str, col_name) => {
+
+      if (str)
+        str += ', ';
+
+      return str + '`' + col_name + '`';;
+
+    }, '')})`;
     q += `\r\nVALUES`;
     q += `\r\n${this.insert.values.map(col => `(${col.defer?.call(col, this, AccessContext.Default) || ''})`).join('\r\n')}`;
     return q;
   }
 
   private updateStr({ from = this.from } = {}) {
-    let q = `UPDATE ${from.path} ${this.tableAlias(from)}`;
-    q += `\r\nSET ${this.updates.map(pair => `${this.colRef(pair[0])}=${this.colRef(pair[1])}`).join(', ')}`;
+    let q = `UPDATE \`${from.path}\` \`${this.tableAlias(from)}\``;
+    q += `\r\nSET ${this.updates.map(pair => `\`${this.colRef(pair[0])}\`=${this.colRef(pair[1])}`).join(', ')}`;
     return q;
   }
 
   private deleteStr({ from = this.from } = {}) {
-    let q = `DELETE ${this.deletes.map(table => this.tableAlias(table)).join(', ')} FROM ${from.path} ${this.tableAlias(from)}`;
+    let q = `DELETE ${this.deletes.map(table => this.tableAlias(table)).join(', ')} FROM \`${from.path}\` ${this.tableAlias(from)}`;
     return q;
   }
 
@@ -657,52 +744,41 @@ export class Query {
   }
 }
 
-type QBaseAny<T, U, V extends QType> = Omit<QBase<T, U, V>, 'q'>
-type Joinable = 'innerJoin' | 'leftJoin' | 'rightJoin' | 'crossJoin';
-type Unionable = 'union' | 'unionAll';
-type QSelectable<T> = Pick<QBaseAny<T, T, 'SELECT'>, 'select' | Joinable | 'where' | 'having' | Unionable | 'toSql' | 'groupBy' | 'orderBy' | 'limit' | 'offset'>
-type QSelected<T, U> = Pick<QBaseAny<T, U, 'SELECT'>, Joinable | 'where' | 'having' | Unionable | 'toSql' | 'groupBy' | 'orderBy' | 'limit' | 'offset'>
+export type QBaseAny<T, U, V extends QType> = Omit<QBase<T, U, V>, 'q'>;
+export type Joinable = 'innerJoin' | 'leftJoin' | 'rightJoin' | 'crossJoin';
+export type Unionable = 'union' | 'unionAll';
+export type QSelectable<T> = Pick<QBaseAny<T, T, 'SELECT'>, 'select' | Joinable | 'where' | 'having' | Unionable | 'toSql' | 'groupBy' | 'orderBy' | 'limit' | 'offset'>
+export type QSelected<T, U> = Pick<QBaseAny<T, U, 'SELECT'>, Joinable | 'where' | 'having' | Unionable | 'toSql' | 'groupBy' | 'orderBy' | 'limit' | 'offset'>
 
-type QWhere<T, U> = QSelected<T, U>
-type QHaving<T, U> = Omit<QWhere<T, U>, 'where' | 'groupBy'>
-type QUnion<T, U> = Pick<QSelected<T, U>, Unionable | 'toSql' | 'groupBy'>
-type QGrouped<T, U, V extends QType> = Pick<QBaseAny<T, U, V>, 'groupBy' | 'toSql' | 'limit' | 'offset'>
-type QOrdered<T, U, V extends QType> = Pick<QBaseAny<T, U, V>, 'orderBy' | 'toSql' | 'limit' | 'offset'>
+export type QWhere<T, U> = QSelected<T, U>
+export type QHaving<T, U> = Omit<QWhere<T, U>, 'where' | 'groupBy'>
+export type QUnion<T, U> = Pick<QSelected<T, U>, Unionable | 'toSql' | 'groupBy'>
+export type QGrouped<T, U, V extends QType> = Pick<QBaseAny<T, U, V>, 'groupBy' | 'toSql' | 'limit' | 'offset'>
+export type QOrdered<T, U, V extends QType> = Pick<QBaseAny<T, U, V>, 'orderBy' | 'toSql' | 'limit' | 'offset'>
 
-type QUpdateable<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, Joinable | 'set' | 'groupBy'>
-type QUpdated<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'where' | 'toSql' | 'groupBy'>
+export type QUpdateable<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, Joinable | 'set' | 'groupBy'>
+export type QUpdated<T, U> = Pick<QBaseAny<T, U, 'UPDATE'>, 'where' | 'toSql' | 'groupBy'>
 
-type QDeletable<T, U> = Pick<QBaseAny<T, U, 'DELETE'>, Joinable | 'tables' | 'where' | 'toSql' | 'groupBy'>
+export type QDeletable<T, U> = Pick<QBaseAny<T, U, 'DELETE'>, Joinable | 'tables' | 'where' | 'toSql' | 'groupBy'>
 
-type QJoined<T, U, V extends QType> = V extends 'SELECT' ? QSelectable<T> : V extends 'UPDATE' ? QUpdateable<T, U> : V extends 'DELETE' ? QDeletable<T, U> : any;
+export type QJoined<T, U, V extends QType> = V extends 'SELECT' ? QSelectable<T> : V extends 'UPDATE' ? QUpdateable<T, U> : V extends 'DELETE' ? QDeletable<T, U> : any;
 
-type QColTuple<T> = [Col<T>, T];
-type ValidTuples = QColTuple<string> | QColTuple<number> | Col<boolean> | [Col<number>, Col<number>] | [Col<string>, Col<string>] | [Col<boolean>, Col<boolean>];
+export type QColTuple<T> = [Col<T>, T];
+export type ValidTuples = QColTuple<string> | QColTuple<number> | Col<boolean> | [Col<number>, Col<number>] | [Col<string>, Col<string>] | [Col<boolean>, Col<boolean>];
 
-type OrderByArgDirectional = { direction: 'asc' | 'desc'; col: Col; }
+export type OrderByArgDirectional = { direction: 'asc' | 'desc'; col: Col; }
 export type OrderByArg = Col | OrderByArgDirectional | (Col | OrderByArgDirectional)[];
 
-type QAll = IQueryable |
-  QBaseAny<any, any, any> |
-  QSelectable<any> |
-  QSelected<any, any> |
-  QWhere<any, any> |
-  QHaving<any, any> |
-  QUnion<any, any> |
-  QGrouped<any, any, any> |
-  QOrdered<any, any, any> |
-  QJoined<any, any, any>;
-
 type QSubquery<T = any> =
-  IQueryable |
-  QSelectable<T> |
-  QSelected<any, T> |
-  QWhere<any, T> |
-  QHaving<any, T> |
-  QUnion<any, T> |
-  QGrouped<any, T, 'SELECT'> |
+  QJoined<any, T, 'SELECT'> |
   QOrdered<any, T, 'SELECT'> |
-  QJoined<any, T, 'SELECT'>;
+  QGrouped<any, T, 'SELECT'> |
+  QUnion<any, T> |
+  QHaving<any, T> |
+  QWhere<any, T> |
+  QSelected<any, T> |
+  QSelectable<T> |
+  IQueryable;
 
 interface IQueryable {
   q: Query;
@@ -720,7 +796,7 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
 
   private _join<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(
     joinType: 'INNER' | 'LEFT' | 'RIGHT' | 'CROSS',
-    toJoin: Table<J> | QSubquery<J>,
+    toJoin: Table<J> | QSelected<any, J>,
     t1On: (model: T) => Col<TKey>,
     t2On: (model: QColMap<J>) => Col<TKey>,
     join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
@@ -728,19 +804,43 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
     let qTable: QTable<J>;
 
     if (toJoin instanceof QBase) {
-      qTable = new QTable(toJoin.model, randomUUID());
+      qTable = new QTable({
+        base: toJoin.model,
+        path: randomUUID(),
+      });
+
+      qTable.cols = (() => {
+        const out = {} as typeof toJoin.selected;
+
+        for (const key in toJoin.selected) {
+          const col = toJoin.selected[key];
+
+          if (col instanceof Col)
+            out[key] = new Col({
+              default: col.default,
+              defer: col.defer,
+              path: col.path,
+              parent: qTable
+            });
+          else
+            throw new Error('Unhandled');
+        }
+
+        return out;
+
+      })();
 
       this.q.joins.push(
         operation((q, ctx) => {
           const qString = subquery(toJoin).defer!(q, ctx);
-          return `${joinType} JOIN ${qString} ${qTable.alias} ON ${q.colRef(t1On(this.model), ctx)} = ${q.colRef(t2On(qTable.cols), ctx)}`
+          return `${joinType} JOIN ${qString} ${q.tableAlias(qTable)} ON ${q.colRef(t1On(this.model), ctx)} = ${q.colRef(t2On(qTable.cols), ctx)}`
         })
       );
 
     }
     else if (toJoin instanceof Table) {
-      qTable = new QTable(toJoin.model, toJoin.name);
-      this.q.joins.push(operation((q) => `${joinType} JOIN ${qTable.path} ${q.tableAlias(qTable)} ON ${q.colRef(t1On(this.model), AccessContext.JoinOn)} = ${q.colRef(t2On(qTable.cols), AccessContext.JoinOn)}`));
+      qTable = new QTable({ base: toJoin.model, path: toJoin.name });
+      this.q.joins.push(operation((q) => `${joinType} JOIN \`${qTable.path}\` ${q.tableAlias(qTable)} ON ${q.colRef(t1On(this.model), AccessContext.JoinOn)} = ${q.colRef(t2On(qTable.cols), AccessContext.JoinOn)}`));
     }
     else {
       throw new Error('toJoin must be a table or subquery/virtual table');
@@ -752,30 +852,52 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
     return new QBase(model, this.q, this.selected, this.q_type) as QJoined<U, TSelected, BaseType>;
   }
 
-  innerJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
-  innerJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
+  innerJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => TKey, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType>;
+  innerJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
+  innerJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
     return this._join('INNER', toJoin, t1On, t2On, join);
   }
 
-  rightJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
-  rightJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
+  rightJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => TKey, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType>;
+  rightJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
+  rightJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
     return this._join('RIGHT', toJoin, t1On, t2On, join);
   }
 
-  leftJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
-  leftJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
+  leftJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => TKey, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType>;
+  leftJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
+  leftJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
     return this._join('LEFT', toJoin, t1On, t2On, join);
   }
 
-  crossJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
-  crossJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSubquery<J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
+  crossJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => TKey, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType>;
+  crossJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: J) => Col<TKey>, join: (tModel: T, joined: J) => U): QJoined<U, TSelected, BaseType>;
+  crossJoin<J extends object, TKey, U extends Record<string, QColMap<unknown>>>(toJoin: Table<J> | QSelected<any, J>, t1On: (model: T) => Col<TKey>, t2On: (model: QColMap<J>) => Col<TKey>, join: (tModel: T, joined: QColMap<J>) => U): QJoined<U, TSelected, BaseType> {
     return this._join('CROSS', toJoin, t1On, t2On, join);
   }
 
-  select<U extends Record<string, Col>>(fn: (model: T) => U): QSelected<T, U> {
-    const selected = fn(this.model);
-    this.q.selected = selected;
-    return new QBase(this.model, this.q, selected, this.q_type);
+  select<U extends Record<string, Arg>>(fn: (model: T) => U): QSelected<T, ArgToColMap<U>>;
+  select<U extends Arg>(fn: (model: T) => U): QSelected<T, ArgToColMap<U>>;
+  select<U extends (Record<string, Arg> | Arg)>(fn: (model: T) => U): QSelected<T, ArgToColMap<U>> {
+
+    let selected = fn(this.model);
+    let selected_safe: any;
+
+    let instruction: symbol;
+    if (isArg(selected, (o) => instruction = o)) {
+      const col = selected_safe = toCol(selected, instruction!);
+      this.q.selected = { [`VAR_${this.q.ptr_var++}`]: col };
+    }
+
+    else {
+      this.q.selected = selected_safe = Object.entries(selected as Record<string, Arg>)
+        .reduce((obj, [key, value]) => {
+          obj[key] = toCol(value);
+          return obj;
+        }, {} as Record<string, Col>);
+    }
+
+    return new QBase(this.model, this.q, selected_safe!, this.q_type);
   }
 
   set(fn: (model: T) => ValidTuples[]): QUpdated<T, T> {
@@ -867,7 +989,8 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
   }
 
   offset(n: number) {
-    this.q.limit = n;
+    this.q.offset = n;
+    return this as any as QSelectable<T>;
   }
 
   toSql(opts?: { ptr_var: number; ptr_table: number }) {
@@ -899,7 +1022,7 @@ class QInsertable<T>{
             if (!modelKeys.includes(key))
               throw new Error(`${key} does not exist on model ${Object.getPrototypeOf(this.model).constructor.name}`);
 
-            this.q.insert.cols.push(key);
+            this.q.insert.cols.push(`${key}`);
           }
         }
 
@@ -957,26 +1080,28 @@ class QInsertable<T>{
 }
 
 export function from<T extends object>(table: Table<T>): QSelectable<QColMap<T>> {
-  const qTable = new QTable(table.model, table.name);
+
+
+  const qTable = new QTable({ base: table.model, path: table.name });
   const q = new Query(qTable, 'SELECT');
   q.selected = qTable.cols;
   return new QBase(qTable.cols, q, qTable.cols, 'SELECT');
 }
 
 export function insertInto<T extends object>(table: Table<T>) {
-  const qTable = new QTable(table.model, table.name);
+  const qTable = new QTable({ base: table.model, path: table.name });
   const q = new Query(qTable, 'INSERT');
   return new QInsertable(qTable.cols, q);
 }
 
 export function update<T extends object>(table: Table<T>): QUpdateable<QColMap<T>, QColMap<T>> {
-  const qTable = new QTable(table.model, table.name);
+  const qTable = new QTable({ base: table.model, path: table.name });
   const q = new Query(qTable, 'UPDATE');
   return new QBase(qTable.cols, q, qTable.cols, 'UPDATE');
 }
 
 export function deleteFrom<T extends object>(table: Table<T>): QDeletable<QColMap<T>, QColMap<T>> {
-  const qTable = new QTable(table.model, table.name);
+  const qTable = new QTable({ base: table.model, path: table.name });
   const q = new Query(qTable, 'DELETE');
   q.deletes = [qTable];
   return new QBase(qTable.cols, q, qTable.cols, 'DELETE');
@@ -1887,23 +2012,24 @@ export function char(args: { values: Arg<number | string>[], using: 'utf8mb4' & 
  * is equivalent to `CHAR(1,0)`, and `CHAR(256*256)` is equivalent to `CHAR(1,0,0)`
  */
 export function char(...integers: Arg<number | string>[]): Col<string>;
-export function char(args: any) {
+export function char(...args: any[]) {
 
   let using = '';
-  let values: Iterable<Arg<number | string>>;
+  let values: Array<Arg<number | string>>;
 
-  if (typeof args === 'object' && !(args instanceof Col) && args.using && Array.isArray(args.values)) {
-    values = args.values;
-    using = args.using;
+  if (args.length === 1 && typeof args[0] === 'object' && !(args[0] instanceof Col)) {
+    values = args[0].values;
+    using = args[0].using;
   }
 
+
   else
-    values = arguments;
+    values = args;
 
   return new Col({
     defer(q, context) {
 
-      const csv = Array.prototype.reduce.call(values, (out, arg) => {
+      const csv = values.reduce((out, arg) => {
         if (!arg)
           return out;
 
@@ -2402,13 +2528,12 @@ export function load_file(path: Arg<string>) {
 export function locate(substr: Arg<string>, string: Arg<string>, pos?: Arg<number>) {
   return new Col<number>({
     defer(q, context) {
-      return `LOCATE(${Array.prototype.reduce.call(arguments, (out, arg: Arg<string | number>) => {
-        if (arg === undefined || arg === null)
-          return out;
+      let args = `${q.colRef(substr, context)}, ${q.colRef(string, context)}`;
 
-        const str = q.colRef(arg, context);
-        return out && arg ? `${out}, ${str}` : str;
-      }, '')})`
+      if (pos !== undefined)
+        args += `, ${q.colRef(pos, context)}`;
+
+      return `LOCATE(${args})`;
     }
   });
 }
