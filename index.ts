@@ -468,6 +468,7 @@ export function subquery<T>(value: QSubquery<T>) {
 }
 
 export type QColMap<T> = { [Index in keyof T]: Col<T[Index]> }
+export type QArgMap<T> = T extends QColMap<infer U> ? { [Index in keyof U]: Arg<U[Index]> } : { [Index in keyof T]: Arg<T[Index]> }
 type QExpressionMap<T> = { [Index in keyof T]: Col<T[Index]> | T[Index] }
 
 class QTable<T extends object = any> {
@@ -667,8 +668,8 @@ export class Query {
   }
 
   private updateStr({ from = this.from } = {}) {
-    let q = `UPDATE \`${from.path}\` \`${this.tableAlias(from)}\``;
-    q += `\r\nSET ${this.updates.map(pair => `\`${this.colRef(pair[0])}\`=${this.colRef(pair[1])}`).join(', ')}`;
+    let q = `UPDATE \`${from.path}\` ${this.tableAlias(from)}`;
+    q += `\r\nSET ${this.updates.map(pair => `${this.colRef(pair[0])} = ${this.colRef(pair[1])}`).join(', ')}`;
     return q;
   }
 
@@ -900,12 +901,24 @@ class QBase<T, TSelected, BaseType extends QType> implements IQueryable {
     return new QBase(this.model, this.q, selected_safe!, this.q_type);
   }
 
-  set(fn: (model: T) => ValidTuples[]): QUpdated<T, T> {
+  set(obj: Partial<QArgMap<T>>): QUpdated<T, T>;
+  set(fn: (model: T) => Partial<QArgMap<T>>): QUpdated<T, T>;
+  set(arg: any): QUpdated<T, T> {
 
-    const tuples = fn(this.model) as [Col, Arg<unknown>][];
+    const tuples: [string, Arg][] = (() => {
 
-    for (const pair of tuples)
-      this.q.updates.push([pair[0], this.q.toCol(pair[1])]);
+      if (typeof arg === 'function')
+        return Object.entries(arg(this.model));
+      else
+        return Object.entries(arg);
+
+    })();
+
+    for (const [key, value] of tuples)
+      this.q.updates.push([
+        (this.model as Record<string, Col>)[key] || (() => { throw new Error(`QBase.set no key found in model matching: ${key}`) })(),
+        toCol(value)
+      ]);
 
     return new QBase(this.model, this.q, this.model, this.q_type);
   }

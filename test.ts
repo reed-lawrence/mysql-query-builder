@@ -1,5 +1,5 @@
 import { escape } from 'mysql2';
-import { adddate, and, Col, count, deleteFrom, equalTo, from, greaterThan, insertInto, QColMap, QSelected, registerEscaper, subquery, Table } from './index';
+import { add, adddate, and, Col, count, deleteFrom, equalTo, from, greaterThan, insertInto, QColMap, QSelected, registerEscaper, subquery, Table, update } from './index';
 
 registerEscaper(escape);
 
@@ -7,6 +7,7 @@ class Post {
   id: number = 0;
   name: string = '';
   date_created: Date = new Date(0);
+  likes: number = 0;
   deleted = false;
 }
 
@@ -98,8 +99,13 @@ const file_types = new Table('file_types', FileType);
 //     )
 //   });
 
-const query = deleteFrom(posts)
-  .where(o => equalTo(o.id, 100));
+// const query = deleteFrom(posts)
+//   .where(o => equalTo(o.id, 100));
+
+const query = update(posts).set((o) => ({
+  deleted: false,
+  likes: add(o.likes, 1)
+})).where(o => equalTo(o.id, 100));
 
 console.log(query.toSql());
 
